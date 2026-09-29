@@ -1,918 +1,567 @@
-# Wazuh Security — extension VS Code + backend FastAPI
+# CyberGuard VS Code
 
-Analyse de sécurité du code **pendant** le développement, directement dans
-VS Code. À chaque sauvegarde — et à chaque modification d'un fichier
-directement sur disque (`git pull`, changement de branche, outil externe) —
-le fichier est envoyé à un backend FastAPI local qui applique un moteur de
-règles déterministe et renvoie les problèmes détectés : gravité,
-explication, conséquences possibles, recommandation et, éventuellement, un
-correctif.
+Une extension de sécurité pour Visual Studio Code qui intègre la détection,
+l'analyse et la surveillance de sécurité directement dans l'environnement de
+développement.
 
-Ce dépôt contient les **deux moitiés indispensables** du produit :
+---
 
-| Dossier             | Rôle                                                    |
-| ------------------- | ------------------------------------------------------- |
-| `vscode-extension/` | L'extension VS Code (TypeScript). Interface uniquement.  |
-| `backend/`          | L'API FastAPI (Python). Toute l'analyse de sécurité.     |
+## Vue d'ensemble
 
-> **L'extension seule ne réalise aucune analyse.** Elle ne contient aucune
-> règle, aucune clé et aucune logique de détection : elle envoie un
-> document au backend et affiche la réponse. **Le backend FastAPI est donc
-> indispensable** — sans lui, l'extension se charge, signale que le backend
-> est injoignable, et ne détecte rien.
+Les problèmes de sécurité sont moins coûteux à corriger lorsqu'ils sont
+détectés au moment où le code est écrit. En pratique, ils sont souvent
+découverts bien plus tard, lors d'une revue de code, d'un pipeline CI ou
+d'un test d'intrusion, alors que le développeur est déjà passé à autre
+chose. Une clé d'API écrite en dur, une requête SQL construite par
+concaténation ou une dépendance vulnérable peuvent traverser plusieurs
+commits avant que quelqu'un ne s'en aperçoive.
 
-## 1. Présentation
+**CyberGuard VS Code** raccourcit cette boucle en rapprochant la sécurité du
+développeur. L'extension surveille le projet pendant le travail, analyse les
+fichiers au fil de leurs modifications et présente les findings là où se
+trouve le code : soulignés dans l'éditeur, listés dans le panneau Problems
+et regroupés dans une vue Security dédiée. Chaque finding indique sa
+gravité, une explication, l'impact potentiel et une recommandation.
 
-L'extension ajoute à VS Code :
+Le projet se compose de deux parties complémentaires :
 
-- une analyse automatique **à la sauvegarde** des fichiers Python,
-  JavaScript, TypeScript (JSX/TSX compris), PHP et Java ;
-- une **surveillance continue** du dossier ouvert : un fichier modifié sur
-  disque, même sans passer par l'éditeur, est réanalysé seul (§7) ;
-- des **diagnostics** natifs (soulignement, panneau Problèmes, survol
-  détaillé avec CWE et OWASP) ;
-- une vue **Security** dans la barre d'activité (Project + Risk Overview +
-  Findings) ;
-- la **sécurité du projet** : secrets écrits en dur, inventaire des
-  dépendances, vulnérabilités connues (OSV), sécurité des API déclarées
-  (§12) ;
-- l'analyse des **changements Git** et une vérification **avant push**
-  lancée depuis l'éditeur (§7) ;
-- des **Quick Fix** appliqués uniquement après confirmation explicite ;
-- une fiche détaillée par signalement ;
-- un **assistant IA facultatif**, côté backend : enrichissement,
-  explication, résumé, correctif proposé dans un diff et jamais appliqué
-  sans confirmation ;
-- un **contrôle CI/CD** en ligne de commande (`node dist/ci-check.js`).
+- **L'extension VS Code** (TypeScript) surveille le workspace et exécute
+  les analyses qui doivent rester sur le poste du développeur : détection
+  des secrets, inventaire des dépendances, analyse des routes d'API. Elle
+  présente l'ensemble des résultats dans l'éditeur.
+- **Le backend de sécurité** (Python, FastAPI) expose une API HTTP locale.
+  Il détient les règles d'analyse du code, stocke les findings, compare
+  les dépendances à une base publique de vulnérabilités et, lorsqu'il est
+  configuré, fournit l'assistance IA.
 
-Le backend, lui, détient les règles, la persistance SQLite, les
-informations d'identification et — si elle est activée — la seule
-connexion à OpenAI.
+La détection est **déterministe** : les findings proviennent de règles
+explicites et non d'un modèle de langage. L'assistant IA, optionnel,
+intervient uniquement pour aider le développeur à comprendre et à corriger
+les problèmes détectés. Il ne crée, ne supprime et ne modifie aucun
+finding.
 
-## 2. Architecture
+## Fonctionnalités principales
 
+### Sécurité du code
+
+- Analyse par règles des fichiers **Python, JavaScript, TypeScript (JSX/TSX
+  compris), PHP et Java**.
+- 19 règles couvrant l'injection SQL, l'injection de commandes, le XSS, les
+  secrets écrits en dur, le path traversal, l'usage dangereux d'`eval`, la
+  désérialisation non sûre, la cryptographie faible, l'aléatoire non sûr,
+  la configuration non sécurisée, le SSRF, le XXE et les redirections
+  ouvertes.
+- Chaque finding comporte une gravité (`CRITICAL`, `HIGH`, `MEDIUM`,
+  `LOW`), une référence CWE et OWASP, une explication, l'impact potentiel
+  et des recommandations.
+- Diagnostics VS Code natifs : code souligné, panneau Problems et survol
+  détaillé.
+- Corrections mécaniques pour certaines règles, appliquées uniquement après
+  confirmation explicite et annulables avec `Ctrl+Z`.
+
+### Détection des secrets
+
+- Détection locale des identifiants exposés. Les types pris en charge
+  comprennent :
+  - clés d'API : OpenAI, Anthropic, AWS, Google, Stripe, SendGrid, Mailgun ;
+  - jetons : GitHub, GitLab, Slack, npm ;
+  - webhooks : Slack, Discord ;
+  - clés privées, JWT et secrets de signature JWT, secrets clients OAuth ;
+  - URL de bases de données et chaînes de connexion, en-têtes
+    `Bearer`/`Basic` ;
+  - clés de stockage Azure, comptes de service Google Cloud et mots de
+    passe écrits en dur.
+- **Redaction** : la valeur d'un secret ne quitte jamais le poste. Seule
+  une forme masquée de la preuve (par exemple `sk-proj-********`) est
+  transmise, et le backend la masque à nouveau avant de la stocker.
+- **Gestion des faux positifs** : les placeholders et les lectures de
+  variables d'environnement sont écartés. Les correspondances trouvées dans
+  des fichiers de test ou d'exemple, ainsi que les valeurs de faible
+  entropie, voient leur gravité abaissée au lieu d'être masquées.
+- Les fichiers classés sensibles (`.env`, clés privées, certificats,
+  fichiers d'identifiants) sont signalés par leur chemin et ne sont
+  **jamais lus**.
+
+### Surveillance du projet
+
+- Surveillance continue du workspace ouvert au moyen d'un
+  `FileSystemWatcher` VS Code.
+- Seuls les fichiers réellement modifiés sont analysés à nouveau : la
+  taille, la date de modification et une empreinte SHA-256 sont comparées
+  au préalable. Un fichier réécrit à l'identique ne déclenche donc rien.
+- Les modifications effectuées **en dehors de l'éditeur** sont également
+  détectées, par exemple après un `git pull`, sans sauvegarde ni scan
+  manuel (voir [Workflow de sécurité](#workflow-de-sécurité)).
+- Une file d'analyse dédiée gère l'anti-rebond, le dédoublonnage, la
+  priorité donnée au fichier qui vient d'être enregistré, la concurrence
+  bornée et l'annulation.
+- L'analyse à la sauvegarde et les commandes à la demande (*Scan Current
+  File*, *Scan Workspace*, *Scan Project Security*) restent disponibles.
+
+### Sécurité des dépendances et des API
+
+- **Inventaire des dépendances** à partir des manifestes et des fichiers de
+  verrouillage. Écosystèmes pris en charge : npm, PyPI, Maven/Gradle,
+  Composer, Go, RubyGems et Cargo. Rien n'est installé ni exécuté : seuls
+  des fichiers texte sont lus.
+- **Vulnérabilités connues** : les versions figées sont comparées à la base
+  publique [OSV](https://osv.dev), uniquement par l'intermédiaire du
+  backend. Une dépendance qui ne peut pas être vérifiée est signalée comme
+  *non vérifiée*, jamais comme sûre.
+- **Sécurité des API** : analyse statique des routes déclarées pour
+  Express, NestJS, FastAPI, Flask, Django, Spring, Laravel et ASP.NET.
+  Elle couvre :
+  - les endpoints modifiant un état sans authentification apparente ;
+  - les routes sensibles sans contrôle d'autorisation ;
+  - les configurations CORS permissives ;
+  - la vérification TLS désactivée et les appels en HTTP non chiffré ;
+  - le mode débogage et les endpoints de diagnostic exposés ;
+  - les identifiants intégrés dans des en-têtes ou des URL.
+
+### Sécurité Git
+
+- Intégration avec l'extension Git intégrée à VS Code. CyberGuard
+  n'exécute aucune commande `git`.
+- *Scan Git Changes* analyse les fichiers modifiés et **attribue** chaque
+  finding : introduit par le changement en cours, ou déjà présent.
+- *Check Changes Before Push* évalue le changement selon une politique
+  configurable (`off`, `warn`, `block`). Seuls les problèmes `CRITICAL` ou
+  `HIGH` **introduits** par le changement sont pris en compte.
+- Les changements volumineux basculent dans un mode réduit, annoncé
+  explicitement, et la vérification s'exécute dans un budget de temps : en
+  cas de dépassement, le résultat est présenté comme *non vérifié*.
+
+### Assistant de sécurité basé sur l'IA
+
+L'assistant IA est optionnel et s'exécute côté backend : l'extension ne
+contacte jamais directement un fournisseur d'IA. Il permet de :
+
+- **expliquer** un finding dans son contexte (*Analyze with AI*) ;
+- **résumer** les findings du projet (*Summarize Findings with AI*) ;
+- **répondre aux questions** dans un chat de sécurité. La question est
+  masquée dans l'extension, puis à nouveau par le backend ;
+- **proposer une correction** limitée aux lignes concernées (*Suggest Fix
+  with AI*), présentée sous forme de diff. Rien n'est écrit sans
+  confirmation. Une fois la correction appliquée, les moteurs
+  déterministes analysent à nouveau le fichier et confirment si le
+  problème a disparu.
+
+Tout texte produit par l'IA est signalé comme tel. Les fichiers `.env`, les
+clés privées, les certificats et les fichiers d'identifiants ne sont
+jamais modifiés. Sans clé d'API configurée sur le backend, toutes les
+autres fonctionnalités restent identiques.
+
+### Interface VS Code
+
+- **Vue Security** dans la barre d'activité, composée de trois panneaux :
+  - *Project* : langages, frameworks, fichiers sensibles, secrets,
+    dépendances, vulnérabilités, changements Git et posture de sécurité ;
+  - *Risk Overview* : nombre de findings par gravité ;
+  - *Findings* : findings regroupés par gravité.
+- **Panneau de détail d'un finding** : explication complète, impact,
+  facteurs de risque et actions disponibles.
+- **Actions rapides** : actions de l'ampoule pour corriger, afficher le
+  détail ou écarter un finding comme faux positif.
+- **Barre d'état** : synthèse de sécurité courante, état de la
+  surveillance et avertissement lorsqu'un backend distant est utilisé.
+- **Notifications** : dédoublonnées et regroupées. Une analyse qui révèle
+  vingt problèmes produit une seule notification, et non vingt.
+- **Panneau IA** : explications, résumés, chat et propositions de
+  correction.
+
+### CI Check
+
+Les mêmes moteurs sont disponibles hors de VS Code sous la forme d'une
+vérification en ligne de commande (`dist/ci-check.js`). Elle produit un
+rapport JSON et un code de sortie qu'un pipeline peut utiliser pour avertir
+ou bloquer selon des conditions telles que des findings `CRITICAL`, des
+secrets exposés ou des dépendances vulnérables.
+
+## Architecture
+
+```text
+┌─────────────────────────────────────┐
+│          Visual Studio Code         │
+│                                     │
+│        Extension CyberGuard         │
+│                                     │
+│   Surveillance • Diagnostics • UI   │
+│   Détection des secrets (locale)    │
+│   Inventaire des dépendances        │
+│   Règles API • Git • Corrections    │
+└──────────────────┬──────────────────┘
+                   │ HTTP (jeton local) / SSE
+                   ▼
+┌─────────────────────────────────────┐
+│        Backend de sécurité          │
+│                                     │
+│   FastAPI • Règles d'analyse        │
+│   Stockage des findings (SQLite)    │
+│   Contexte projet • Posture / CI    │
+│   Authentification • Redaction      │
+└─────────┬─────────────────┬─────────┘
+          │                 │ optionnel
+          ▼                 ▼
+   Base de vulnérabilités   API compatible
+          OSV                   OpenAI
 ```
-┌────────────────────┐   HTTP /api/code/*   ┌──────────────────────┐
-│  VS Code Extension │ ───────────────────► │   Backend FastAPI    │
-│  (TypeScript)      │ ◄─────────────────── │   (Python 3.12)      │
-│                    │      findings        │                      │
-│  diagnostics       │                      │  moteur de règles    │
-│  vue Security      │   SSE /api/stream    │  enrichissement IA   │
-│  quick fix         │ ◄─────────────────── │  SQLite (findings)   │
-│  détection secrets │                      │                      │
-│  inventaire deps   │  HTTP /api/project/* │  base OSV (réseau)   │
-└────────────────────┘ ───────────────────► └──────────────────────┘
+
+Choix de conception :
+
+- **Priorité au local.** Par défaut, le backend écoute sur `127.0.0.1`.
+  L'utilisation d'un backend situé sur une autre machine exige une
+  activation explicite dans les paramètres de l'extension, et un
+  repository ne peut pas modifier ce paramètre de lui-même.
+- **Les secrets restent locaux.** La détection des secrets s'exécute dans
+  l'extension ; seule une preuve masquée est transmise.
+- **Une source de vérité unique.** Les findings sont stockés par le
+  backend puis relus par l'extension. La vue de l'éditeur, le panneau
+  Problems et le CI Check affichent donc les mêmes données.
+- **API authentifiée.** Les routes protégées exigent un jeton local. Le
+  backend le génère dans le profil de l'utilisateur, hors du repository ;
+  l'extension le lit et le conserve dans le trousseau du système.
+- **Contrat partagé.** `contract/api-contract.json` décrit l'API entre les
+  deux parties, et un test de chaque côté en vérifie le respect.
+
+## Stack technologique
+
+| Domaine            | Technologies                                                    |
+| ------------------ | --------------------------------------------------------------- |
+| Extension          | TypeScript (strict), VS Code Extension API, Node.js, esbuild    |
+| Backend            | Python 3.12, FastAPI, Uvicorn, Pydantic, httpx                  |
+| Stockage           | SQLite                                                          |
+| Données de sécurité | Base de vulnérabilités OSV                                     |
+| IA (optionnelle)   | API Chat compatible OpenAI, appelée uniquement par le backend   |
+| Tests              | Lanceur de tests intégré à Node.js, pytest                      |
+
+## Structure du projet
+
+```text
+cyberguard-vscode/
+├── vscode-extension/      extension VS Code (TypeScript)
+│   ├── src/               surveillance, analyse, secrets, dépendances,
+│   │                      règles API, Git, IA, remédiation, interface
+│   ├── test/              tests unitaires (lanceur de tests Node.js)
+│   ├── resources/         icônes
+│   └── package.json       manifeste, commandes, paramètres, scripts
+│
+├── backend/               backend de sécurité (FastAPI)
+│   ├── app/               routes d'API, règles d'analyse du code,
+│   │                      services de sécurité, intégration IA,
+│   │                      authentification, stockage
+│   ├── tests/             suite pytest
+│   ├── .env.example       modèle de configuration (sans secret)
+│   └── requirements.txt
+│
+├── contract/              contrat d'API partagé par les deux parties
+├── docs/                  notes de conception : modèle de sécurité,
+│                          contexte de projet
+├── .gitignore
+└── README.md
 ```
 
-La détection de secrets et l'inventaire des dépendances tournent **dans
-l'extension** : lire un fichier du poste pour y chercher un secret est une
-opération locale, et l'envoyer à un serveur pour la même raison n'en serait
-pas une. Seule une preuve *expurgée* traverse. L'interrogation de la base
-de vulnérabilités est faite par le backend, seul détenteur de la sortie
-réseau. Voir §12.
+## Installation
 
-Ce que l'extension ne fait **jamais** :
+### Prérequis
 
+- Visual Studio Code **1.85** ou version ultérieure
+- **Node.js 18+** et npm
+- **Python 3.12**
+- Git
+
+### 1. Cloner le repository
+
+```bash
+git clone https://github.com/Fatima-fati/cyberguard-vscode.git
+cd cyberguard-vscode
 ```
-VS Code → Wazuh Manager API   ✗
-VS Code → Wazuh Indexer       ✗
-VS Code → OpenAI              ✗
-```
 
-Le backend expose par ailleurs des routes de supervision Wazuh
-(`/api/alerts`, `/api/servers`, `/api/monitoring/*`, `/api/ai/*`) héritées
-du projet de supervision. **Elles ne sont pas nécessaires à l'extension** :
-ni l'analyse de code, ni la détection de secrets, ni l'inventaire des
-dépendances, ni l'analyse de vulnérabilités ne dépendent d'un Wazuh en
-fonctionnement ou de l'Indexer. Ces fonctions répondent à l'identique avec
-Wazuh complètement arrêté, et deux suites de tests le vérifient. Seules les
-routes `/api/code/*`, `/api/project/*`, `/api/security/*` et `/api/stream`
-sont utilisées par l'extension.
-
-### Endpoints utilisés par l'extension
-
-Toutes exigent le jeton local, **sauf** `GET /api/code/health` : c'est la
-route de diagnostic, et l'exiger rendrait un problème d'authentification
-indiscernable d'un backend éteint. Voir [docs/SECURITY.md](docs/SECURITY.md).
-
-| Méthode | Chemin                                | Auth | Rôle                                        |
-| ------- | ------------------------------------- | ---- | ------------------------------------------- |
-| GET     | `/api/code/health`                    | —    | Version, règles, état IA, `auth_required`   |
-| POST    | `/api/code/scan`                      | ✓    | Analyse un document (contenu + empreinte)   |
-| GET     | `/api/code/scans/{scan_uid}`          | ✓    | Relit une analyse (état terminal, enrichie) |
-| GET     | `/api/code/findings`                  | ✓    | Findings ouverts, filtrables par projet     |
-| POST    | `/api/code/findings/{uid}/fix`        | ✓    | Demande un correctif (ne l'applique pas)    |
-| POST    | `/api/code/findings/{uid}/decision`   | ✓    | Marque « corrigé » ou « ignoré »            |
-| POST    | `/api/project/discover`               | ✓    | Enregistre un projet, retourne son identifiant |
-| POST    | `/api/project/{uid}/index`            | ✓    | Soumet l'index, reçoit le contexte          |
-| GET     | `/api/project/{uid}/context`          | ✓    | Relit le contexte enregistré                |
-| GET     | `/api/security/health`                | ✓    | Capacités du moteur de sécurité projet      |
-| POST    | `/api/project/{uid}/secrets`          | ✓    | Balayage de secrets (preuves **expurgées**) |
-| POST    | `/api/project/{uid}/dependencies`     | ✓    | Inventaire + analyse de vulnérabilités      |
-| GET     | `/api/project/{uid}/findings`         | ✓    | Findings de sécurité, toutes familles       |
-| GET     | `/api/stream`                         | ✓    | Flux SSE, cloisonné par `?project_uid=`     |
-
-Routes complémentaires du même préfixe : `GET /api/code/rules` et
-`GET /api/code/stats`.
-
-## 3. Installation
-
-### 3.1 Node.js
-
-Nécessaire uniquement pour compiler et tester l'extension.
-
-- **Node.js 18 ou plus récent** et npm : <https://nodejs.org>
-- Vérification :
-
-  ```powershell
-  node --version
-  npm --version
-  ```
-
-- **VS Code 1.85** ou plus récent est également requis.
-
-### 3.2 Python
-
-Nécessaire pour le backend.
-
-- **Python 3.12** (ou 3.11+) : <https://www.python.org/downloads/>
-- Vérification :
-
-  ```powershell
-  python --version
-  ```
-
-### 3.3 Dépendances
+### 2. Installer le backend
 
 ```powershell
-# Backend
 cd backend
 python -m venv .venv
-.\.venv\Scripts\Activate.ps1
+.\.venv\Scripts\Activate.ps1          # macOS / Linux: source .venv/bin/activate
 pip install -r requirements.txt
-pip install -r requirements-dev.txt   # pytest, pour les tests
-
-# Extension
-cd ..\vscode-extension
-npm ci
+pip install -r requirements-dev.txt   # Dépendances de test (pytest)
 ```
 
-Puis créer la configuration locale du backend :
+### 3. Créer la configuration du backend
+
+```powershell
+copy .env.example .env                # macOS / Linux: cp .env.example .env
+```
+
+Les valeurs par défaut suffisent pour l'analyse du code, la détection des
+secrets et l'analyse des dépendances et des API. Voir
+[Configuration](#configuration).
+
+### 4. Installer et compiler l'extension
+
+```powershell
+cd ..\vscode-extension
+npm ci
+npm run compile
+```
+
+### 5. Démarrer le backend
 
 ```powershell
 cd ..\backend
-copy .env.example .env
-```
-
-`backend/.env.example` ne contient **aucun secret** : toutes les valeurs
-sensibles y sont vides. Pour la seule analyse de code, le fichier par
-défaut suffit — aucune clé n'est nécessaire.
-
-## 4. Démarrage du backend
-
-```powershell
-cd backend
 .\.venv\Scripts\Activate.ps1
-python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-Vérifications :
+Pour vérifier que le backend fonctionne :
+`http://127.0.0.1:8000/api/code/health` doit renvoyer
+`{"status":"ok", ...}`, et la documentation OpenAPI est disponible à
+l'adresse `http://127.0.0.1:8000/docs`.
 
-- <http://127.0.0.1:8000/api/code/health> → `{"status":"ok", ...}`
-- <http://127.0.0.1:8000/docs> → documentation OpenAPI
+Au premier démarrage, le backend crée sa base SQLite dans `backend/data/`.
+Il génère également le jeton d'authentification local dans le profil de
+l'utilisateur, où l'extension le récupère automatiquement. Il n'y a rien à
+copier.
 
-`--host 127.0.0.1` est le mode **développement local** : le backend n'est
-joignable que depuis cette machine. Le démarrage annonce le mode retenu
-dans les journaux. Pour un déploiement joignable depuis le réseau, voir
-[docs/SECURITY.md](docs/SECURITY.md) § 3.
+### 6. Lancer l'extension en mode développement
 
-Au premier démarrage, le backend :
+1. Ouvrir le dossier **`vscode-extension/`** dans VS Code.
+2. Appuyer sur **F5**. La configuration de lancement fournie compile
+   l'extension et ouvre une seconde fenêtre VS Code dans laquelle
+   CyberGuard est chargé.
+3. Dans cette fenêtre, ouvrir le projet à analyser.
 
-1. **recrée la base SQLite** `backend/data/alerts.db` (`store.init_db()`) —
-   elle n'est pas versionnée ;
-2. **génère son jeton d'authentification** dans
-   `~/.wazuh-security/agent-token`, hors du dépôt. L'extension le lit
-   automatiquement et le conserve dans le trousseau du système : il n'y a
-   rien à configurer, et rien à copier nulle part.
+## Configuration
 
-Sans backend démarré, l'extension reste chargée, signale que le backend est
-injoignable et n'invente aucun résultat.
+### Backend (`backend/.env`)
 
-## 5. Lancer l'extension (F5)
+`backend/.env` est créé à partir de `backend/.env.example` et n'est jamais
+commité. Principales variables :
 
-1. Ouvrir le dossier **`vscode-extension/`** dans VS Code (pas la racine).
-2. `npm ci` puis `npm run compile`.
-3. Appuyer sur **F5** (« Run Extension ») : une seconde fenêtre VS Code
-   s'ouvre, extension chargée.
-4. Dans cette fenêtre, ouvrir un projet et sauvegarder un fichier Python,
-   JavaScript, TypeScript, PHP ou Java.
+```env
+# Réseau : local uniquement par défaut
+API_HOST=127.0.0.1
+API_PORT=8000
 
-Le backend doit tourner en parallèle. Le canal **Affichage → Sortie →
-Wazuh Security** trace chaque analyse ; le contenu des fichiers n'y
-apparaît jamais.
+# Authentification locale entre l'extension et le backend
+AGENT_AUTH_ENABLED=true
+# vide : un jeton est généré automatiquement
+AGENT_AUTH_TOKEN=
+# vide : emplacement par défaut dans le profil utilisateur
+AGENT_TOKEN_PATH=
 
-### Compiler et packager
+# Moteurs d'analyse
+CODE_ANALYSIS_ENABLED=true
+SECRET_DETECTION_ENABLED=true
+DEPENDENCY_INVENTORY_ENABLED=true
+DEPENDENCY_VULNERABILITY_ENABLED=true   # appels sortants vers l'API OSV
+
+# Assistance IA optionnelle (désactivée sans clé)
+OPENAI_API_KEY=
+OPENAI_MODEL=gpt-4o-mini
+CODE_AI_ENRICHMENT_ENABLED=false
+
+# Stockage
+DATABASE_PATH=data/alerts.db
+```
+
+Les autres sections de `.env.example` ne sont pas nécessaires à
+l'extension et peuvent conserver leurs valeurs par défaut.
+
+### Paramètres de l'extension
+
+Les paramètres sont accessibles dans **Settings → Extensions**. Il est
+possible de rechercher les clés ci-dessous :
+
+| Paramètre                    | Valeur par défaut       | Rôle                                               |
+| ---------------------------- | ----------------------- | -------------------------------------------------- |
+| `backendUrl`                 | `http://127.0.0.1:8000` | Adresse du backend (portée machine, non modifiable par un repository) |
+| `allowRemoteBackend`         | `false`                 | Autorise un backend situé sur une autre machine    |
+| `autoScan` / `scanOnSave`    | `true`                  | Analyse automatique et analyse à la sauvegarde     |
+| `monitoring.enabled`         | `true`                  | Surveillance continue des fichiers modifiés        |
+| `monitoring.debounceMs`      | `1200`                  | Délai avant l'analyse d'un fichier modifié         |
+| `project.secretDetection`    | `true`                  | Détection locale des secrets                       |
+| `project.dependencyAnalysis` | `true`                  | Inventaire des dépendances                         |
+| `project.vulnerabilityCheck` | `true`                  | Recherche de vulnérabilités (via le backend)       |
+| `project.apiSecurity`        | `true`                  | Analyse statique des routes d'API                  |
+| `git.enabled`                | `true`                  | Analyse des changements Git                        |
+| `git.prePushProtection`      | `warn`                  | `off`, `warn` ou `block` pour la vérification avant push |
+| `ai.assistant`               | `true`                  | Assistant IA (nécessite une clé côté backend)      |
+| `ci.policy`                  | `warn`                  | Politique affichée dans la posture de sécurité     |
+
+## Utilisation
+
+1. **Démarrer le backend** (voir [Installation](#5-démarrer-le-backend)).
+2. **Ouvrir un projet** dans VS Code avec CyberGuard activé. L'extension
+   s'active au démarrage et découvre le contexte du projet : langages,
+   frameworks et fichiers sensibles. Lorsque la détection des secrets ou
+   l'analyse des dépendances est activée, elle recherche également les
+   secrets et les dépendances. Le panneau *Project* de la vue Security
+   affiche le résultat.
+3. **Travailler normalement.** L'enregistrement d'un fichier déclenche son
+   analyse. Les fichiers modifiés sur disque par d'autres outils (Git,
+   gestionnaires de paquets, générateurs) sont pris en charge par la
+   surveillance.
+4. **Consulter les findings.** Ils sont soulignés dans l'éditeur, listés
+   dans le panneau Problems et regroupés par gravité dans le panneau
+   *Findings*. La barre d'état indique l'état général.
+5. **Ouvrir un finding** pour afficher son panneau de détail :
+   explication, impact, références CWE/OWASP et recommandations.
+6. **Agir.** Appliquer une correction proposée, écarter un faux positif en
+   précisant éventuellement une raison ou, si l'IA est configurée,
+   demander une explication ou une proposition de correction.
+7. **Avant un push**, lancer *Check Changes Before Push* pour identifier
+   les problèmes introduits par le changement en cours.
+
+Toutes les commandes sont accessibles depuis la palette de commandes
+(`Ctrl+Shift+P`) : *Scan Current File*, *Scan Workspace*, *Scan Project
+Security*, *Refresh Project Security*, *Scan Git Changes*, *Check Changes
+Before Push*, *Refresh Findings*, *Clear Findings*, *Check Backend* ainsi
+que les commandes IA.
+
+## Workflow de sécurité
+
+```text
+Développeur
+   ↓
+Modification du code / du projet   (édition, sauvegarde, git pull, changement de branche, générateur)
+   ↓
+Surveillance CyberGuard            (file watcher, empreinte, file d'analyse)
+   ↓
+Analyse de sécurité                (règles de code, secrets, dépendances, routes d'API)
+   ↓
+Findings                           (stockés par le backend, source de vérité unique)
+   ↓
+Risque / Contexte                  (gravité, confiance, CWE/OWASP, attribution Git)
+   ↓
+Retour au développeur              (diagnostics, vue Security, notifications)
+   ↓
+Remédiation / Assistance IA optionnelles
+```
+
+**Modifications effectuées en dehors de l'éditeur.** La surveillance est
+pilotée par le système de fichiers, et non par la sauvegarde. Après un
+`git pull` :
+
+```text
+git pull → fichier modifié sur disque → FileSystemWatcher → changement détecté
+         → analyse automatique → findings mis à jour
+```
+
+Ce scénario a été validé dans une véritable instance de VS Code, avec le
+backend réel et un fichier ouvert dans l'éditeur. Les nouveaux findings
+sont apparus en quelques secondes, sans `Ctrl+S`, sans scan manuel et sans
+redémarrage de VS Code. Le fichier a été analysé une seule fois et aucune
+analyse supplémentaire n'a suivi.
+
+## Tests
+
+**Extension** (depuis `vscode-extension/`) :
 
 ```powershell
-cd vscode-extension
-npm run typecheck    # vérification TypeScript stricte, sans build
-npm run compile      # build de développement → dist/extension.js, dist/ci-check.js
-npm run build        # typecheck + build de production (minifié)
-npx @vscode/vsce package   # produit un .vsix (lance `npm run build` via vscode:prepublish)
+npm run typecheck    # vérification TypeScript stricte
+npm test             # compile et exécute les tests unitaires (lanceur de tests Node.js)
 ```
 
-`dist/` n'est pas versionné : il est régénéré par ces commandes, par la
-tâche F5 et au packaging. Le projet n'ayant pas de fichier `LICENSE`
-(`"license": "UNLICENSED"`), `vsce` le signale et demande confirmation ;
-`--skip-license` permet de packager malgré tout. Le `.vsix` s'installe par **Extensions → … →
-Install from VSIX…**.
-
-## 6. Configuration de l'extension
-
-| Réglage                       | Défaut                  | Rôle                                      |
-| ----------------------------- | ----------------------- | ----------------------------------------- |
-| `wazuhSecurity.backendUrl`    | `http://127.0.0.1:8000` | Adresse du backend d'analyse. **Portée `machine`** : non modifiable par un dépôt |
-| `wazuhSecurity.allowRemoteBackend` | `false` | Autorise un backend hors de cette machine. **Portée `machine`** |
-| `wazuhSecurity.project.discoverOnStartup` | `true` | Établit le contexte du projet à l'ouverture du dossier |
-| `wazuhSecurity.autoScan`      | `true`                  | Active l'analyse automatique              |
-| `wazuhSecurity.scanOnSave`    | `true`                  | Analyse à chaque sauvegarde               |
-| `wazuhSecurity.syncOnStartup` | `true`                  | Reprend les findings ouverts au démarrage |
-| `wazuhSecurity.aiEnrichment`  | `false`                 | Demande au **backend** un enrichissement IA |
-| `wazuhSecurity.monitoring.enabled` | `true`             | Surveille les fichiers du projet et réanalyse ceux qui changent |
-| `wazuhSecurity.monitoring.debounceMs` | `1200`          | Anti-rebond avant l'analyse d'un fichier modifié (200–10 000 ms) |
-| `wazuhSecurity.git.enabled`   | `true`                  | Analyse des changements Git (API Git de VS Code, aucune commande `git`) |
-| `wazuhSecurity.git.prePushProtection` | `warn`          | `off` / `warn` / `block` pour « Check Changes Before Push » |
-| `wazuhSecurity.project.apiSecurity` | `true`            | Analyse statique des routes d'API déclarées |
-| `wazuhSecurity.ai.assistant`  | `true`                  | Assistant IA (sans effet si le backend n'a pas de clé) |
-| `wazuhSecurity.ci.policy`     | `warn`                  | Politique affichée dans la posture de sécurité |
-
-La liste complète, avec la description de chaque réglage, figure dans
-**Paramètres → Extensions → Wazuh Security**.
-
-`backendUrl` vaut `http://127.0.0.1:8000` par défaut : c'est l'adresse sur
-laquelle uvicorn écoute avec la commande ci-dessus. Si le backend tourne sur
-un autre port de cette machine, modifier ce réglage dans les paramètres VS
-Code.
-
-**Un backend sur une autre machine exige deux gestes délibérés** :
-renseigner `backendUrl` *et* activer `wazuhSecurity.allowRemoteBackend`.
-La raison est que cette adresse décide où part le contenu intégral de
-chaque fichier analysé : les deux réglages sont de portée `machine` — donc
-hors de portée du `.vscode/settings.json` d'un dépôt cloné — et une adresse
-distante autorisée reste signalée en permanence dans la barre d'état. Les
-adresses refusées (protocole inattendu, identifiants dans l'URL, chemin de
-base) donnent un message explicite et un repli annoncé sur la boucle
-locale. Détail dans [docs/SECURITY.md](docs/SECURITY.md) § 4.
-
-## 7. Utilisation
-
-### Analyse à la sauvegarde
-
-Sauvegarder un fichier pris en charge déclenche l'analyse. Un
-**anti-rebond de 800 ms** regroupe les sauvegardes rapprochées, l'empreinte
-SHA-256 du contenu accompagne la requête, et VS Code n'est jamais bloqué :
-la requête est asynchrone. Une sauvegarde pendant une analyse annule et
-remplace celle en cours — un résultat qui ne correspond plus au contenu
-affiché n'est jamais montré.
-
-Ne partent **jamais** au backend : `.env` et ses variantes, clés privées et
-certificats (`*.pem`, `*.key`, `*.p12`, `id_rsa`…), `.npmrc`, `.pypirc`,
-`credentials`, ainsi que `node_modules/`, `dist/`, `build/`, `.git/`,
-`.venv/`, `__pycache__/`, les fichiers listés dans le `.gitignore` du
-projet, les documents non enregistrés, les fichiers vides et ceux
-dépassant 400 Ko.
-
-### Surveillance automatique des fichiers
-
-Avec `wazuhSecurity.monitoring.enabled` (actif par défaut), l'extension
-surveille le premier dossier du workspace et réanalyse **uniquement les
-fichiers qui changent**, sans parcours complet du projet :
-
-```
-FileSystemWatcher (**/*)      création / modification / suppression
-  → classification            dossier exclu (.git, node_modules…) ? binaire ?
-                              sensible (.env, clés) : journalisé, jamais lu
-  → empreinte                 taille, date, SHA-256 : un fichier réécrit à
-                              l'identique ne déclenche rien
-  → file d'attente            anti-rebond, dédoublonnage, priorité au fichier
-                              que l'on vient d'enregistrer, concurrence bornée
-  → moteurs existants         /api/code/scan, secrets, API, dépendances
-  → findings                  relus chez le backend, vue et Problems à jour
-```
-
-Code : `vscode-extension/src/monitor/` (`projectMonitor.ts`,
-`changeClassification.ts`, `fileSignature.ts`, `scanQueue.ts`,
-`securityBaseline.ts`).
-
-La partie *sécurité projet* (secrets, API, dépendances) attend qu'une
-première découverte du projet ait abouti dans la session : sans cet état de
-référence, un lot incomplet effacerait les constats des autres fichiers. Le
-journal l'annonce. L'analyse de code, elle, n'en dépend pas.
-
-#### Modifications faites hors de l'éditeur, par exemple `git pull`
-
-Le déclencheur est le **système de fichiers**, pas la sauvegarde : un
-fichier modifié directement sur disque est détecté comme un autre.
-
-```
-git pull
-  → le fichier est modifié sur disque
-  → FileSystemWatcher le signale
-  → détection du changement (classification + empreinte)
-  → scan automatique du fichier
-  → mise à jour des findings (vue Security, panneau Problems)
-```
-
-Ce scénario a été **validé dans une vraie instance VS Code**, extension
-active et backend réel : fichier ouvert dans l'éditeur, `git pull
---ff-only` exécuté hors de VS Code et apportant une commande système
-construite dynamiquement et une clé d'accès écrite en dur. Les findings
-correspondants sont apparus en quelques secondes **sans `Ctrl+S`, sans scan
-manuel et sans redémarrage**. Plusieurs événements pour le même fichier ont
-produit une seule analyse de code et une seule soumission de secrets, et
-aucune nouvelle analyse n'a suivi (pas de boucle). Cette validation a été
-faite manuellement : elle ne fait pas partie des suites automatisées du §8.
-
-Non couvert par cette validation : un fichier portant des modifications
-**non enregistrées** dans l'éditeur au moment du `git pull` (VS Code
-signale alors lui-même le conflit).
-
-### Changements Git et vérification avant push
-
-**Wazuh Security: Scan Git Changes** analyse les fichiers modifiés et
-distingue ce que **le changement introduit** de ce qui existait déjà.
-Tout passe par l'API de l'extension Git de VS Code : aucune commande `git`
-n'est exécutée. Au-delà de `wazuhSecurity.git.maxChangedFiles`, l'analyse
-passe en mode réduit et l'annonce.
-
-**Wazuh Security: Check Changes Before Push** applique
-`wazuhSecurity.git.prePushProtection`. Seuls les problèmes `CRITICAL` ou
-`HIGH` **introduits** par le changement comptent. **Aucun hook Git n'est
-installé** : un `push` lancé depuis un terminal n'est pas intercepté, et en
-mode `block`, « Pousser quand même » reste toujours proposé.
-
-### Contrôle CI/CD
-
-Le même moteur tourne hors de VS Code, backend joignable requis :
+**Backend** (depuis `backend/`, environnement virtuel activé) :
 
 ```powershell
-cd vscode-extension
-npm run compile
-node dist/ci-check.js --root .. --policy warn   # --help pour toutes les options
-```
-
-Rapport JSON sur la sortie standard, journal sur la sortie d'erreur. Aucune
-IA, aucun score : les conditions (`CRITICAL`, `HIGH`, secrets, dépendances
-vulnérables) sont des faits établis par les moteurs de détection.
-
-### Scan Current File
-
-**Wazuh Security: Scan Current File** analyse le fichier actif à la
-demande, même si `scanOnSave` est désactivé. Si le fichier n'est pas
-analysable, la commande explique pourquoi.
-
-### Scan Workspace
-
-**Wazuh Security: Scan Workspace** analyse tous les fichiers pris en
-charge du workspace (300 au maximum), avec une barre de progression
-annulable.
-
-Autres commandes : **Clear Findings**, **Refresh Findings**, **Analyze
-with AI** (visible seulement si le backend annonce l'IA active) et
-**Check Backend** (diagnostic de connexion).
-
-### Diagnostics
-
-Chaque finding devient un diagnostic VS Code natif :
-
-| Sévérité backend | Diagnostic VS Code |
-| ---------------- | ------------------ |
-| `CRITICAL`       | Error              |
-| `HIGH`           | Error              |
-| `MEDIUM`         | Warning            |
-| `LOW`            | Information        |
-
-Le survol affiche le titre, la gravité, les références CWE et OWASP,
-l'explication, les conséquences possibles et la recommandation. La barre
-d'état résume : `Sécurité : 1 critique, 2 élevées`, ou `Sécurité : OK`.
-
-### Quick Fix
-
-L'ampoule (`Ctrl+.`) propose selon le cas :
-
-| Action             | Effet                                                                 |
-| ------------------ | --------------------------------------------------------------------- |
-| **Corriger**       | `POST /api/code/findings/{uid}/fix`, affichage de la ligne avant/après, écriture **après confirmation explicite** uniquement. |
-| **Voir le détail** | Ouvre la fiche complète (explication, conséquences, facteurs de risque). |
-| **Ignorer**        | `POST /api/code/findings/{uid}/decision` : faux positif, avec raison facultative. |
-
-La correction est appliquée par un `WorkspaceEdit` : **annulable par
-Ctrl+Z** et visible dans le diff Git. Le backend n'écrit jamais dans vos
-fichiers — il décrit la modification, l'éditeur l'applique. Un correctif
-est refusé si la ligne a changé depuis l'analyse.
-
-### Findings
-
-La vue **Security** (icône bouclier) affiche deux arbres natifs :
-*Risk Overview* (compteurs par sévérité) et *Findings* (regroupés par
-gravité). Un clic ouvre le fichier, place le curseur sur la zone concernée
-et affiche la fiche détaillée.
-
-Aucun finding n'est supprimé : « corrigé » et « ignoré » sont des états,
-consultables ensuite via `GET /api/code/findings`. Au démarrage,
-`syncOnStartup` reprend les findings encore ouverts sans rien réanalyser ;
-les diagnostics ne sont soulignés que si l'empreinte du fichier correspond
-toujours.
-
-### SSE et enrichissement IA
-
-L'enrichissement IA est **désactivé par défaut des deux côtés**. Il exige :
-
-- côté backend : `CODE_AI_ENRICHMENT_ENABLED=true` **et** une
-  `OPENAI_API_KEY` valide dans `backend/.env` ;
-- côté extension : `wazuhSecurity.aiEnrichment` à `true`.
-
-Tant que l'une des deux manque, **aucune requête ne part vers OpenAI** :
-seules les règles déterministes s'appliquent.
-
-```
-sauvegarde → règles (immédiat)           → diagnostics affichés
-           → enrichissement IA (backend) → « Sécurité : analyse IA… »
-           → event SSE code_finding      → diagnostic mis à jour
-           → event SSE code_scan         → barre d'état finalisée
-```
-
-L'extension ouvre **une seule connexion** SSE sur `/api/stream` à
-l'activation et n'écoute que `code_finding`. Le flux n'est **jamais
-indispensable** : le résultat du scan arrive par la réponse HTTP, et
-l'état terminal est relu par `GET /api/code/scans/{scan_uid}`. En cas de
-coupure, la reconnexion est progressive (1 s, 2 s, 4 s, 8 s, 16 s, puis
-30 s au maximum) et silencieuse. Ce qui transite n'est jamais journalisé.
-
-## 8. Tests
-
-### Tests de l'extension
-
-```powershell
-cd vscode-extension
-npm ci
-npm run build        # typecheck strict + build de production
-npm test             # suites de vscode-extension/test/*.test.ts
-```
-
-Lanceur natif de Node, aucune dépendance ajoutée. `fetch`, le minuteur, le
-système de fichiers et la réserve de secrets sont tous injectés : aucun
-réseau, aucun backend, aucune clé requise, et aucune lecture du profil de
-l'utilisateur.
-
-Les suites couvrent l'analyse, le client HTTP, le store de findings, le
-garde-fou de correction, le registre de notifications, le client SSE, le
-HTML de la fiche, la présentation, et depuis les phases 0 et 1 : la
-validation de l'adresse du backend, la résolution du jeton, l'identité de
-projet, la découverte locale, le service de contexte et le contrat d'API ;
-puis la surveillance (classification, file d'attente, monitoring), les
-changements Git, la sécurité d'API, l'assistant IA, la remédiation et la
-posture CI/CD.
-
-Les parties liées à l'API VS Code (diagnostics, ampoule, webview, barre
-d'état) sont couvertes par le typecheck strict et se vérifient au
-lancement F5.
-
-### Tests du backend
-
-```powershell
-cd backend
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements-dev.txt
 python -m pytest -q
 ```
 
-Les dépendances externes sont toutes simulées
-(`httpx.MockTransport`, base SQLite temporaire, client Wazuh bouchonné,
-fournisseur de vulnérabilités doublé) : **aucun appel réseau réel, aucun
-Wazuh en fonctionnement requis, aucune clé OpenAI nécessaire, aucune
-interrogation d'osv.dev**.
+Les tests ne nécessitent ni accès réseau, ni backend en fonctionnement, ni
+clé d'API. Les services externes (client HTTP, base de vulnérabilités,
+fournisseur d'IA) sont simulés. Un test de contrat de chaque côté vérifie
+que l'extension et le backend respectent `contract/api-contract.json`.
 
-`tests/test_security_without_wazuh.py` va plus loin que la simulation : il
-vérifie sur le **code source** que `app/security` ne nomme Wazuh nulle
-part, puis remplace toute la couche Wazuh par des objets qui lèvent à la
-moindre sollicitation et rejoue les routes de la phase 2.
+## Compilation et packaging
 
-La suite tourne **authentification activée**, avec un jeton de test
-installé par `conftest.py` : elle exerce donc le chemin réellement servi en
-production, et non une variante sans contrôle.
+Depuis `vscode-extension/` :
 
-### Test de contrat
-
-`contract/api-contract.json` décrit le contrat partagé, et **deux** tests
-le vérifient — un de chaque côté :
-
-```
-backend/tests/test_api_contract.py         → schéma OpenAPI de FastAPI
-vscode-extension/test/apiContract.test.ts  → types TypeScript
+```powershell
+npm run compile            # build de développement → dist/extension.js, dist/ci-check.js
+npm run build              # typecheck + build de production minifié
+npx @vscode/vsce package   # crée un .vsix (lance d'abord le build de production)
 ```
 
-Une divergence d'un côté ou de l'autre fait échouer un build. Le fichier
-liste aussi des **champs interdits** (contenu de fichier, chemin absolu,
-URL de remote Git, score de sécurité) : leur apparition dans un modèle fait
-échouer la suite.
+Le projet ne contient pas de fichier `LICENSE` (`"license": "UNLICENSED"`) :
+`vsce` demande donc une confirmation. La commande `npx @vscode/vsce package
+--skip-license` permet d'éviter cette question. Le fichier `.vsix` obtenu
+s'installe via **Extensions → … → Install from VSIX…**.
 
-## 9. Structure du projet
+Le CI Check s'exécute avec un backend en fonctionnement :
 
-```
-VsCode-extension/
-├── .gitignore
-├── README.md                  ← ce fichier
-├── contract/
-│   └── api-contract.json      contrat partagé extension ↔ backend,
-│                              vérifié des deux côtés par un test
-├── docs/
-│   ├── SECURITY.md            modèle de sécurité de l'agent
-│   └── PROJECT_CONTEXT.md     contexte de projet en détail
-├── vscode-extension/          extension VS Code (TypeScript)
-│   ├── .vscode/               launch.json (F5) + tasks.json
-│   ├── resources/             shield.svg (icône de la vue Security)
-│   ├── src/
-│   │   ├── analysis/          filtrage, empreinte, contrôleur de scan
-│   │   ├── api/               backendClient, streamClient, backendUrl,
-│   │   │                      agentToken
-│   │   ├── monitor/           surveillance continue : watcher,
-│   │   │                      classification, empreintes, file d'attente
-│   │   ├── git/               changements Git, attribution, avant push
-│   │   ├── apisec/            analyse statique des routes d'API
-│   │   ├── project/           découverte, identité, contexte, types
-│   │   ├── security/          motifs de secrets, scanner, expurgation,
-│   │   │                      faux positifs, inventaire de dépendances,
-│   │   │                      adaptateur de findings
-│   │   ├── ai/, remediation/  assistant IA, correctif assisté
-│   │   ├── posture/           posture de sécurité, politique CI/CD
-│   │   ├── cli/               contrôle CI/CD (dist/ci-check.js)
-│   │   ├── diagnostics/       provider, survol, mapping de sévérité,
-│   │   │                      diagnostics de sécurité projet
-│   │   ├── state/             findingsStore, notificationLedger
-│   │   ├── ui/                vues Project et Security, quick fix, fiche,
-│   │   │                      barre d'état
-│   │   ├── i18n/              libellés
-│   │   └── extension.ts       activation / désactivation
-│   ├── test/                  tests unitaires (lanceur natif de Node)
-│   ├── .vscodeignore
-│   ├── esbuild.mjs
-│   ├── package.json
-│   ├── package-lock.json
-│   ├── tsconfig.json
-│   └── README.md              documentation détaillée de l'extension
-└── backend/                   API FastAPI (Python)
-    ├── app/
-    │   ├── code/              analyse de code : rules, scanner, routes…
-    │   ├── project/           contexte de projet : discovery, context,
-    │   │                      routes, schemas, ai_contract
-    │   ├── security/          findings unifiés, expurgation, secrets,
-    │   │                      dépendances, providers/ (OSV)
-    │   ├── ai/                enrichissement IA, sanitizer, risque
-    │   ├── notifier/          SSE (stream.py), e-mail, Discord
-    │   ├── auth.py            jeton local, dépendance d'authentification
-    │   ├── config.py          réglages (pydantic-settings, lit .env)
-    │   ├── paths.py           validation des chemins relatifs, partagée
-    │   ├── main.py            application FastAPI
-    │   ├── routes.py          routes /api/*
-    │   └── store.py           SQLite (init_db, persistance)
-    ├── tests/                 suite pytest
-    ├── data/
-    │   └── .gitkeep           la base est recréée au démarrage
-    ├── .env                   configuration locale — jamais versionnée
-    ├── .env.example           modèle sans secret
-    ├── pytest.ini
-    ├── requirements.txt
-    └── requirements-dev.txt
+```powershell
+node dist/ci-check.js --root .. --policy warn   # --help liste toutes les options
 ```
 
-## 10. Sécurité et gestion des `.env`
-
-> Le modèle de sécurité complet — authentification, cloisonnement du flux,
-> validation de l'adresse du backend, ce que le contexte de projet collecte
-> et refuse de collecter — est décrit dans
-> **[docs/SECURITY.md](docs/SECURITY.md)**. Cette section en résume la
-> partie « fichiers de configuration ».
-
-- **`backend/.env` est local et ne doit jamais être versionné ni partagé.**
-  Il est couvert par le `.gitignore` racine.
-- **`backend/.env.example` est le seul fichier de configuration
-  partageable.** Toutes ses valeurs sensibles (`WAZUH_API_PASSWORD`,
-  `INDEXER_PASSWORD`, `OPENAI_API_KEY`, `SMTP_PASSWORD`,
-  `DISCORD_WEBHOOK_URL`) sont **vides**. Ne jamais y écrire une valeur
-  réelle.
-- **`backend/data/*.db` n'est pas versionnée** : elle peut contenir des
-  alertes réelles. Elle est recréée automatiquement par `store.init_db()`.
-- **L'extension ne contient aucun secret** : ni clé, ni mot de passe, ni
-  jeton. La clé OpenAI, si elle est configurée, reste exclusivement côté
-  backend et n'est jamais renvoyée au client ni journalisée.
-- **Le contenu des fichiers analysés** n'est envoyé qu'au backend local,
-  fichier par fichier, jamais journalisé, jamais conservé après la
-  requête. Le workspace transmis est son **nom**, pas le chemin absolu.
-- Si une clé a été exposée par le passé (fichier partagé, capture,
-  historique Git), **elle doit être considérée comme compromise** : la
-  révoquer chez le fournisseur et en générer une nouvelle. La retirer du
-  fichier ne suffit pas.
-
-Avant tout premier `git init` / `git push`, vérifier qu'aucun secret réel
-ne se trouve dans les fichiers destinés au dépôt :
-
-```bash
-git ls-files | grep -Ei "\.env|\.pem|\.key|agent-token"
-```
-
-`.gitignore` ne protège que ce qui n'est **pas déjà suivi** : un fichier
-ajouté à l'index avant l'ajout d'une règle y reste.
-
-## 11. Contexte de projet
-
-À l'ouverture d'un dossier, l'agent établit ce qu'il sait du projet :
-langages, frameworks, type, fichiers importants et sensibles, présence d'un
-dépôt Git. En arrière-plan, annulable, sans bloquer l'éditeur.
-
-La découverte n'indexe que des **métadonnées** — chemin relatif, taille,
-empreinte, date. Aucun contenu de fichier n'est transmis, et le contenu des
-fichiers sensibles n'est **jamais lu**, pas même pour calculer une
-empreinte.
-
-Le résultat s'affiche dans la vue **Project**, à côté de Risk Overview et
-Findings. La commande **« Wazuh Security: Refresh Project Security »** la
-rafraîchit.
-
-Description complète : **[docs/PROJECT_CONTEXT.md](docs/PROJECT_CONTEXT.md)**.
-
-## 12. Sécurité du projet : secrets, dépendances, vulnérabilités
-
-Trois moteurs **déterministes**, indépendants les uns des autres, et
-indépendants de Wazuh.
-
-> **Wazuh n'est pas requis.** Aucun de ces trois moteurs n'appelle le
-> Wazuh Manager, le Wazuh Indexer ou l'API Wazuh. Ils répondent à
-> l'identique avec Wazuh complètement arrêté ou absent — deux suites de
-> tests le vérifient, l'une sur le code source (`app/security` ne nomme
-> Wazuh nulle part), l'autre en remplaçant toute la couche Wazuh par des
-> objets qui lèvent à la moindre sollicitation.
-
-### 12.1 Où tourne quoi, et pourquoi
-
-```
-détection des secrets     EXTENSION   lire un fichier pour y chercher un
-                                      secret est une opération locale ;
-                                      l'envoyer à un serveur pour la même
-                                      raison n'en serait pas une
-inventaire dépendances    EXTENSION   les manifestes sont sur le poste
-base de vulnérabilités    BACKEND     il détient la sortie réseau, et lui
-                                      seul
-persistance, libellés     BACKEND     une seule définition du vocabulaire
-                                      affiché
-```
-
-Conséquence directe : **la valeur d'un secret ne quitte jamais la
-machine.** Ce qui monte vers le backend est un chemin relatif, une ligne,
-un type de secret, une confiance et une preuve déjà expurgée.
-
-### 12.2 Détection de secrets
-
-Lancée pendant la découverte du projet — le même parcours, sans second
-passage sur le disque : la découverte lit déjà chaque fichier éligible
-pour en calculer l'empreinte, et le texte est offert au moteur pendant
-qu'il est en mémoire.
-
-Reconnaît notamment : clés OpenAI et Anthropic, clés d'accès AWS, jetons
-GitHub, GitLab, Slack, npm, clés Google et SendGrid, clés Stripe, webhooks
-Slack et Discord, blocs de clés privées, JWT et clés de signature JWT,
-en-têtes `Bearer` et `Basic`, secrets clients OAuth, mots de passe écrits
-en dur, identifiants dans une URL de base de données, clés de stockage
-Azure, comptes de service Google Cloud.
-
-Un **seul** jeu de motifs couvre Python, JavaScript, TypeScript, JSON,
-YAML, TOML, Java, PHP, Go, C#, Ruby et les fichiers de configuration : les
-motifs d'affectation acceptent `=`, `:`, `=>` et `:=`, avec ou sans
-guillemets. Une table par langage aurait divergé au premier ajout.
-
-**Expurgation.** La valeur détectée ne quitte pas la portée de la fonction
-qui l'examine : elle est pesée, puis remplacée par son masque.
-
-```
-❌ jamais stocké    sk-proj-A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6
-✅ stocké           OpenAI API key detected: sk-proj-********
-```
-
-L'expurgation est appliquée **deux fois**, et la redondance est voulue :
-côté extension pour protéger le poste (journaux, mémoire, fenêtre de
-détail), côté backend pour protéger la base — celui-ci ne fait aucune
-confiance à l'expurgation du client, parce qu'il écoute en local et que
-tout processus de la machine peut poster sur ses routes.
-
-**Faux positifs.** Deux traitements, jamais confondus :
-
-| Situation                                                    | Traitement    |
-| ------------------------------------------------------------ | ------------- |
-| `${API_KEY}`, `<API_KEY>`, `YOUR_API_KEY`, `CHANGE_ME`       | **écarté**    |
-| `process.env.X`, `os.environ[...]`, `System.getenv(...)`     | **écarté**    |
-| `example.com`, valeur d'un seul caractère répété             | **écarté**    |
-| fichier de test, de fixtures, d'exemple, de documentation     | **déclassé**  |
-| valeur de faible entropie sur un motif d'affectation          | **déclassé**  |
-
-La distinction porte une décision : un placeholder est écarté (l'afficher
-serait toujours faux), une clé dans un fichier de test est **déclassée**
-mais conservée — les secrets réels dans les fixtures existent, et c'est
-précisément là qu'on oublie de les faire tourner.
-
-**Confiance et gravité** voyagent côte à côte et ne se confondent pas. Une
-détection de faible confiance ne s'affiche **jamais** en `CRITICAL` :
-
-| Confiance | Effet sur la gravité affichée   |
-| --------- | ------------------------------- |
-| `HIGH`    | inchangée                       |
-| `MEDIUM`  | `CRITICAL` → `HIGH`             |
-| `LOW`     | plafonnée à `MEDIUM`            |
-
-La règle protège la crédibilité du signal : une liste de critiques où un
-sur deux est faux cesse d'être lue, et le jour où un vrai secret y figure,
-il passe inaperçu.
-
-**Limite assumée.** Les fichiers classés sensibles en phase 1 — `.env`,
-`.pem`, `id_rsa`, `.npmrc`, `credentials` — ne sont **pas lus**, donc pas
-analysés. Ils sont déjà signalés par leur chemin, et les ouvrir n'ajouterait
-aucune information : leur raison d'être est de contenir des secrets. Le
-moteur cherche là où un secret ne devrait pas être — code source,
-configuration versionnée, workflows d'intégration continue.
-
-### 12.3 Inventaire des dépendances
-
-**Aucune installation, aucune exécution.** Pas de `npm install`, pas de
-`pip download`, pas de `mvn dependency:tree`. Résoudre un arbre en lançant
-le gestionnaire de paquets reviendrait à exécuter du code arbitraire venu
-d'un dépôt qu'on est en train d'auditer — un script `postinstall` suffit.
-Seuls des fichiers texte sont lus.
-
-| Écosystème | Manifestes                                 | Fichiers de verrouillage                      |
-| ---------- | ------------------------------------------ | --------------------------------------------- |
-| Node.js    | `package.json`                             | `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml` |
-| Python     | `requirements*.txt`, `pyproject.toml`, `Pipfile` | `poetry.lock`, `Pipfile.lock`             |
-| Java       | `pom.xml`, `build.gradle`, `build.gradle.kts` | —                                          |
-| PHP        | `composer.json`                            | `composer.lock`                               |
-| Go         | `go.mod`                                   | `go.sum`                                      |
-| Ruby       | `Gemfile`                                  | `Gemfile.lock`                                |
-| Rust       | `Cargo.toml`                               | `Cargo.lock`                                  |
-
-Manifeste et lockfile ne disent pas la même chose :
-
-```
-package.json      "express": "^4.18.0"   une CONTRAINTE
-package-lock.json "version": "4.18.2"    un ARTEFACT
-```
-
-Seul le second est interrogeable. Une contrainte produit une version
-**vide**, qui se propage jusqu'au bout comme « non vérifiable » plutôt que
-d'être devinée : inventer une version plausible à partir de `^1.2.0`
-produirait une réponse — vulnérable ou saine — qui ne décrirait aucun
-artefact réellement installé.
-
-### 12.4 Analyse de vulnérabilités
-
-Les vulnérabilités **ne sont pas écrites dans ce dépôt** : une liste de CVE
-en dur serait périmée le lendemain de sa rédaction. Elles viennent d'une
-base publique interrogée par le backend, derrière l'interface
-`VulnerabilityProvider` (implémentation fournie : **OSV**, `osv.dev`).
-
-Ce qui sort de la machine : **un nom de paquet, son écosystème, sa
-version.** Rien d'autre — ni chemin, ni identifiant de projet, ni contenu.
-C'est ce qu'un registre public connaît déjà de ces paquets. Un test
-compare le corps de requête entier, pas seulement quelques champs.
-
-Pour couper cette sortie réseau :
-
-```bash
-# backend/.env
-DEPENDENCY_VULNERABILITY_ENABLED=false
-```
-
-ou, côté extension, `wazuhSecurity.project.vulnerabilityCheck: false`.
-L'inventaire continue alors de fonctionner, et l'interface affiche
-« vérification désactivée ».
-
-**La règle qui gouverne tout ce moteur :**
-
-> « Le fournisseur n'a pas répondu » **n'est pas** « il n'y a pas de
-> vulnérabilité ».
-
-Trois états, et un seul autorise à conclure :
-
-| État                  | Ce qu'on peut en dire                          |
-| --------------------- | ---------------------------------------------- |
-| vérifiée et saine     | la base a répondu, rien pour ce paquet         |
-| vérifiée et vulnérable | la base a répondu, voici quoi                 |
-| **non vérifiée**      | version non figée, écosystème non couvert, ou base muette — **on ne sait pas** |
-
-Une dépendance non vérifiée n'est **jamais** comptée comme saine : elle
-alimente le compteur `unverified`, et le message affiché dit « impossible
-de vérifier », jamais « dépendance sûre ». L'interface n'affiche même pas
-de chiffre quand l'état n'est pas concluant — un « 0 » resterait lisible
-comme un feu vert, même accompagné d'une infobulle que personne n'ouvre.
-
-Modes de défaut gérés, chacun avec son état et son message : réseau coupé
-(`unavailable`), délai dépassé (`timeout`), quota atteint (`rate_limited`),
-erreur du service (`error`), corps illisible (`error`), vérification
-désactivée (`disabled`), lot plafonné ou avis non décrit (`partial`).
-
-### 12.5 Findings unifiés
-
-`SecurityFinding` est le modèle commun à toutes les familles :
-
-```
-id · project_uid · category · severity · confidence · title · description
-file · line_start · line_end · evidence · remediation · references
-detection_engine · status · created_at
-```
-
-Catégories : `SECRET`, `DEPENDENCY`, `CODE`, `CONFIGURATION`, `API`, `GIT`.
-`API` est alimentée par l'analyse statique des routes d'API. `GIT` est
-**déclarée mais vide** : l'analyse Git classe les findings existants
-(introduits ou préexistants) sans en créer de nouveaux. Une catégorie
-annoncée et vide est honnête ; une catégorie inventée après coup casse les
-filtres déjà écrits.
-
-Les findings d'analyse de fichier (`CodeFinding`, `/api/code/*`) restent
-inchangés : leur contrat est publié et l'extension s'en sert. Les deux se
-rejoignent **dans la vue**, pas dans le type.
-
-### 12.6 Interface
-
-Secrets et dépendances vulnérables apparaissent dans la vue **Findings**
-existante, triés avec le reste :
-
-```
-Security
-├── Critical (2)
-│   ├── Secret detected          backend/config.py:24
-│   └── Vulnerable dependency    package.json
-├── High (4)
-├── Medium (5)
-└── Low (2)
-```
-
-La vue **Project** gagne trois lignes : `Secrets`, `Dépendances` (dépliable
-par écosystème) et `Vulnérabilités`. Les findings de sécurité projet
-alimentent aussi le panneau **Problems**, dans une collection distincte
-(`wazuhSecurity.project`) — l'utilisateur peut donc filtrer les deux
-familles séparément.
-
-Notification, telle que l'utilisateur la reçoit :
-
-```
-🚨 Secret detected
-
-File: backend/config.py
-Line: 24
-Type: OpenAI API Key
-Confidence: High
-```
-
-Les notifications passent par le centre de notifications existant, qui
-dédoublonne et regroupe : un balayage remontant vingt secrets produit une
-bulle, pas vingt.
-
-### 12.7 Commandes et réglages
-
-| Commande                                       | Effet                                          |
-| ---------------------------------------------- | ---------------------------------------------- |
-| `Wazuh Security: Scan Project Security`        | Relance découverte + secrets + dépendances     |
-| `Wazuh Security: Refresh Project Security`     | Découverte, selon les réglages                 |
-
-| Réglage                                          | Défaut | Effet                                      |
-| ------------------------------------------------ | ------ | ------------------------------------------ |
-| `wazuhSecurity.project.secretDetection`          | `true` | Recherche de secrets, entièrement locale   |
-| `wazuhSecurity.project.dependencyAnalysis`       | `true` | Inventaire, lecture de manifestes seule    |
-| `wazuhSecurity.project.vulnerabilityCheck`       | `true` | Comparaison à la base publique, via backend |
-
-Côté backend (`backend/.env`) : `SECRET_DETECTION_ENABLED`,
-`DEPENDENCY_INVENTORY_ENABLED`, `DEPENDENCY_VULNERABILITY_ENABLED`,
-`VULNERABILITY_PROVIDER`, `OSV_API_URL`, `OSV_TIMEOUT_SECONDS`,
-`SECRET_MAX_FINDINGS`, `PROJECT_MAX_DEPENDENCIES`.
-
-Une capacité désactivée côté backend répond **503**, pas une liste vide :
-une liste vide se lirait « rien à signaler ».
-
-### 12.8 Autres capacités et limites
-
-Présents, avec leurs suites de tests : analyse statique des API
-(`src/apisec/`), changements Git et vérification avant push
-(`src/git/`), assistant IA de sécurité — explication, résumé, chat,
-correctif proposé dans un diff et appliqué seulement après confirmation
-(`src/ai/`, `src/remediation/`) —, posture et contrôle CI/CD
-(`src/posture/`, `src/cli/`). Leurs réglages sont décrits dans
-**Paramètres → Extensions → Wazuh Security**.
-
-Limites assumées :
-
-- **aucun hook Git** n'est installé : un `push` depuis un terminal n'est
-  pas vérifié ;
-- l'analyse d'API est **statique** : une route montée dynamiquement ou un
-  framework non pris en charge n'apparaît pas ;
-- l'IA **explique, elle ne décide pas** : elle ne crée, ne supprime ni ne
-  modifie aucun finding, et reste inactive sans clé côté backend ;
-- l'extension ne parle **jamais** à Wazuh : les routes de supervision
-  Wazuh du backend ne la concernent pas.
-
+`dist/` est un produit de compilation et n'est pas versionné.
+
+## Sécurité et confidentialité
+
+- **Les secrets ne sont jamais commités.** `backend/.env` est exclu par le
+  `.gitignore`, de même que les bases de données, les clés privées, les
+  certificats, les fichiers d'identifiants et le jeton d'authentification
+  local.
+- **`backend/.env.example` n'est qu'un modèle.** Toutes ses valeurs
+  sensibles sont vides.
+- **La valeur des secrets ne quitte jamais le poste.** La détection est
+  locale, et seule une preuve masquée parvient au backend, qui la masque à
+  nouveau avant de la stocker.
+- **Les requêtes IA sont réduites au minimum et masquées.** Un finding est
+  transmis par son identifiant, et une question posée dans le chat est
+  masquée avant de quitter l'éditeur. Le modèle reçoit du backend un
+  contexte réduit : preuve masquée, chemins relatifs et métadonnées du
+  projet. Il ne reçoit jamais le contenu des fichiers, ni clé, ni mot de
+  passe.
+- **Les fichiers sensibles ne sont pas lus.** Les fichiers `.env`, les clés
+  privées, les certificats et les fichiers d'identifiants sont signalés
+  uniquement par leur chemin.
+- **Le contenu des fichiers n'est envoyé qu'au backend configuré.** Il est
+  transmis fichier par fichier pour analyse, jamais journalisé, et limité
+  à 400 KB par fichier.
+- **API protégée.** Toutes les routes du backend utilisées par l'extension
+  exigent le jeton local, à l'exception du health check.
+
+## Limites
+
+- L'analyse du code repose sur des règles à base de motifs. Elle couvre
+  cinq langages et peut produire des faux positifs ou manquer des
+  problèmes qui nécessiteraient une analyse de flux de données.
+- L'analyse des API est statique. Les routes enregistrées dynamiquement,
+  ou celles des frameworks absents de la liste prise en charge, ne sont pas
+  signalées.
+- La vérification avant push se lance depuis l'éditeur. Aucun hook Git
+  n'est installé : un `push` effectué depuis un terminal n'est donc pas
+  vérifié.
+- La surveillance couvre le premier dossier du workspace. L'analyse
+  incrémentale au niveau du projet démarre après la découverte initiale du
+  projet.
+- La vérification des vulnérabilités nécessite un accès réseau du backend
+  vers OSV. Les versions non figées ne peuvent pas être vérifiées.
+- L'interface utilisateur est actuellement en français.
+
+## Perspectives d'évolution
+
+Il s'agit de pistes possibles, et non de fonctionnalités déjà disponibles :
+
+- Meilleure corrélation entre les findings des différents moteurs.
+- Analyse plus approfondie, par exemple un suivi des flux de données pour
+  les règles d'injection.
+- Nouvelles règles de sécurité et nouveaux langages.
+- Contexte plus riche pour l'assistant IA et propositions de correction
+  mieux ciblées.
+- Amélioration des performances sur les très grands repositories.
+- Intégration CI/CD plus poussée, par exemple des modèles de pipeline prêts
+  à l'emploi.
+
+## Licence
+
+Ce repository est privé et n'est pas distribué sous une licence open
+source. Le manifeste de l'extension déclare `"license": "UNLICENSED"`. Tous
+droits réservés.
+
+## À propos du projet
+
+CyberGuard VS Code a été développé dans le cadre d'un projet de
+cybersécurité visant à intégrer l'analyse de sécurité au processus de
+développement logiciel, au plus près du moment où le code est écrit.
