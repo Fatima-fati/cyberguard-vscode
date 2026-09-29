@@ -1,0 +1,490 @@
+{
+  "name": "wazuh-security",
+  "displayName": "Wazuh Security",
+  "description": "Analyse de sécurité du code pendant le développement, via le backend Wazuh Supervision.",
+  "version": "0.3.0",
+  "publisher": "wazuh-supervision",
+  "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Fatima-fati/cyberguard-vscode.git",
+    "directory": "vscode-extension"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Linters",
+    "Other"
+  ],
+  "keywords": [
+    "security",
+    "sécurité",
+    "sast",
+    "vulnerability",
+    "wazuh",
+    "secrets",
+    "dependencies",
+    "sca"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "wazuhSecurity",
+          "title": "Security",
+          "icon": "resources/shield.svg"
+        }
+      ]
+    },
+    "views": {
+      "wazuhSecurity": [
+        {
+          "id": "wazuhSecurity.project",
+          "name": "Project"
+        },
+        {
+          "id": "wazuhSecurity.riskOverview",
+          "name": "Risk Overview"
+        },
+        {
+          "id": "wazuhSecurity.findings",
+          "name": "Findings"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "wazuhSecurity.project",
+        "contents": "Aucun contexte de projet.\n[Refresh Project Security](command:wazuhSecurity.refreshProject)\n[Scan Project Security](command:wazuhSecurity.scanProjectSecurity)\nLa découverte indexe des métadonnées (langages, frameworks, fichiers sensibles) sans jamais lire le contenu des fichiers sensibles. L’analyse de sécurité y ajoute la recherche de secrets et l’inventaire des dépendances, sans jamais transmettre la valeur d’un secret."
+      },
+      {
+        "view": "wazuhSecurity.findings",
+        "contents": "Aucun signalement de sécurité pour l'instant.\n[Scan Current File](command:wazuhSecurity.scanCurrentFile)\n[Scan Workspace](command:wazuhSecurity.scanWorkspace)\nLes résultats proviennent du backend Wazuh Supervision (/api/code/*)."
+      }
+    ],
+    "commands": [
+      {
+        "command": "wazuhSecurity.scanCurrentFile",
+        "title": "Scan Current File",
+        "category": "Wazuh Security",
+        "icon": "$(search)"
+      },
+      {
+        "command": "wazuhSecurity.scanWorkspace",
+        "title": "Scan Workspace",
+        "category": "Wazuh Security",
+        "icon": "$(folder-active)"
+      },
+      {
+        "command": "wazuhSecurity.clearFindings",
+        "title": "Clear Findings",
+        "category": "Wazuh Security",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "wazuhSecurity.refreshFindings",
+        "title": "Refresh Findings",
+        "category": "Wazuh Security",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "wazuhSecurity.checkBackend",
+        "title": "Check Backend",
+        "category": "Wazuh Security"
+      },
+      {
+        "command": "wazuhSecurity.analyzeWithAi",
+        "title": "Analyze with AI",
+        "category": "Wazuh Security",
+        "icon": "$(sparkle)"
+      },
+      {
+        "command": "wazuhSecurity.applyFix",
+        "title": "Apply Suggested Fix",
+        "category": "Wazuh Security"
+      },
+      {
+        "command": "wazuhSecurity.dismissFinding",
+        "title": "Dismiss Finding",
+        "category": "Wazuh Security"
+      },
+      {
+        "command": "wazuhSecurity.showFindingDetail",
+        "title": "Show Finding Detail",
+        "category": "Wazuh Security"
+      },
+      {
+        "command": "wazuhSecurity.openFinding",
+        "title": "View Issue",
+        "category": "Wazuh Security",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "wazuhSecurity.refreshProject",
+        "title": "Refresh Project Security",
+        "category": "Wazuh Security",
+        "icon": "$(sync)"
+      },
+      {
+        "command": "wazuhSecurity.scanProjectSecurity",
+        "title": "Scan Project Security",
+        "category": "Wazuh Security",
+        "icon": "$(shield)"
+      },
+      {
+        "command": "wazuhSecurity.scanGitChanges",
+        "title": "Scan Git Changes",
+        "category": "Wazuh Security",
+        "icon": "$(git-commit)"
+      },
+      {
+        "command": "wazuhSecurity.checkBeforePush",
+        "title": "Check Changes Before Push",
+        "category": "Wazuh Security",
+        "icon": "$(shield)"
+      },
+      {
+        "command": "wazuhSecurity.securityChat",
+        "title": "Security Chat (AI)",
+        "category": "Wazuh Security",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "wazuhSecurity.summarizeWithAi",
+        "title": "Summarize Findings with AI",
+        "category": "Wazuh Security",
+        "icon": "$(sparkle)"
+      },
+      {
+        "command": "wazuhSecurity.suggestFixWithAi",
+        "title": "Suggest Fix with AI",
+        "category": "Wazuh Security",
+        "icon": "$(lightbulb-sparkle)"
+      },
+      {
+        "command": "wazuhSecurity.applyAiFix",
+        "title": "Apply AI-Suggested Fix",
+        "category": "Wazuh Security"
+      },
+      {
+        "command": "wazuhSecurity.cancelAiFix",
+        "title": "Cancel AI-Suggested Fix",
+        "category": "Wazuh Security"
+      },
+      {
+        "command": "wazuhSecurity.showAiFixDiff",
+        "title": "Show AI-Suggested Fix Diff",
+        "category": "Wazuh Security"
+      }
+    ],
+    "configuration": {
+      "title": "Wazuh Security",
+      "properties": {
+        "wazuhSecurity.backendUrl": {
+          "type": "string",
+          "default": "http://127.0.0.1:8000",
+          "scope": "machine",
+          "markdownDescription": "Adresse du backend FastAPI qui réalise l’analyse. L’extension ne parle qu’à `/api/code/*` et `/api/project/*` : jamais à Wazuh, jamais à OpenAI.\n\n**Portée `machine`** : ce réglage n’est pas modifiable par le `.vscode/settings.json` d’un dépôt. Le contenu intégral de chaque fichier analysé part à cette adresse ; un dépôt cloné ne doit pas pouvoir la changer."
+        },
+        "wazuhSecurity.autoScan": {
+          "type": "boolean",
+          "default": true,
+          "description": "Active l'analyse automatique. Désactivé, seule la commande « Wazuh Security: Scan Current File » déclenche une analyse."
+        },
+        "wazuhSecurity.scanOnSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Analyse le fichier à chaque sauvegarde (nécessite aussi wazuhSecurity.autoScan)."
+        },
+        "wazuhSecurity.syncOnStartup": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Au démarrage, reprend les signalements encore ouverts depuis `GET /api/code/findings` pour remplir la vue Security sans tout réanalyser. Les diagnostics ne sont republiés que si le fichier ouvert correspond exactement au contenu analysé."
+        },
+        "wazuhSecurity.aiEnrichment": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Demande au **backend** d'enrichir les résultats par une analyse IA. L'extension n'appelle jamais OpenAI elle-même. Sans effet tant que le backend n'a pas activé `CODE_AI_ENRICHMENT_ENABLED`."
+        },
+        "wazuhSecurity.allowRemoteBackend": {
+          "type": "boolean",
+          "default": false,
+          "scope": "machine",
+          "markdownDescription": "Autorise un backend qui n’est pas sur cette machine.\n\nDésactivé, seules les adresses locales (`127.0.0.1`, `localhost`, `::1`) sont acceptées. Activer ce réglage fait sortir le contenu des fichiers analysés de cette machine : c’est une décision à prendre explicitement, et elle reste visible dans la barre d’état."
+        },
+        "wazuhSecurity.project.discoverOnStartup": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Établit le contexte du projet à l’ouverture du dossier, en arrière-plan.\n\nLa découverte n’indexe que des métadonnées (chemin, taille, empreinte) et ne lance **aucune** analyse de sécurité : elle reste peu coûteuse. Désactivé, seule la commande « Refresh Project Security » la déclenche."
+        },
+        "wazuhSecurity.monitoring.enabled": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Surveille les fichiers du projet et réanalyse **uniquement ceux qui changent**.\n\nAucun parcours complet n'est relancé à la sauvegarde : la taille, la date et l'empreinte déjà indexées décident si un fichier a réellement changé, et une sauvegarde sans modification ne déclenche rien. Le fichier que vous venez d'éditer passe devant les changements de fond (`git checkout`, `npm install`).\n\nDésactivé, l'extension retrouve le comportement précédent : analyse du fichier ouvert à la sauvegarde, et balayage du projet à la demande."
+        },
+        "wazuhSecurity.monitoring.debounceMs": {
+          "type": "number",
+          "default": 1200,
+          "minimum": 200,
+          "maximum": 10000,
+          "markdownDescription": "Délai d'attente avant d'analyser un fichier modifié, en millisecondes.\n\nRegroupe les sauvegardes rapprochées : dix `Ctrl+S` en deux secondes produisent une seule analyse. Les valeurs hors bornes sont ramenées dans l'intervalle."
+        },
+        "wazuhSecurity.git.enabled": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Analyse les changements Git et distingue ce que **ce changement introduit** de ce qui était déjà là.\n\nPasse uniquement par l'API de l'extension Git de VS Code : aucune commande `git` n'est exécutée. Un dépôt qui vient d'être cloné ne peut donc pas obtenir l'exécution de code par le seul fait d'être analysé.\n\nDésactivé, la section « Changements Git » disparaît et aucun dépôt n'est observé."
+        },
+        "wazuhSecurity.git.prePushProtection": {
+          "type": "string",
+          "enum": [
+            "off",
+            "warn",
+            "block"
+          ],
+          "default": "warn",
+          "enumDescriptions": [
+            "Aucune vérification avant push.",
+            "Prévient quand le changement introduit un problème grave, sans empêcher le push.",
+            "Demande une confirmation explicite. Le contournement reste toujours possible."
+          ],
+          "markdownDescription": "Comportement de la commande « Wazuh Security: Check Changes Before Push ».\n\n**L'extension n'installe aucun hook Git**, dans aucun mode. Écrire un script dans `.git/hooks` reviendrait à installer du code exécutable dans le dépôt sans demande explicite. La vérification est donc lancée depuis l'éditeur, et un `push` fait depuis un terminal n'est pas intercepté.\n\nSeuls les problèmes **introduits par le changement** et de gravité `CRITICAL` ou `HIGH` déclenchent quelque chose : un problème préexistant ne bloque jamais un push qui ne l'a pas causé.\n\nEn mode `block`, « Pousser quand même » est **toujours** proposé, et le contournement est journalisé. Une protection sans échappatoire se contourne par la ligne de commande, donc sans laisser de trace."
+        },
+        "wazuhSecurity.git.maxChangedFiles": {
+          "type": "number",
+          "default": 50,
+          "minimum": 1,
+          "maximum": 500,
+          "markdownDescription": "Au-delà de ce nombre de fichiers modifiés, l'analyse passe en **mode réduit** : seuls les premiers fichiers sont examinés, et le résumé l'annonce.\n\nUn `git checkout` de branche ou une fusion peuvent toucher des milliers de fichiers. Prétendre les vérifier tous en quelques secondes serait faux ; annoncer la couverture partielle est la seule option honnête."
+        },
+        "wazuhSecurity.git.budgetMs": {
+          "type": "number",
+          "default": 2500,
+          "minimum": 250,
+          "maximum": 10000,
+          "markdownDescription": "Temps maximal accordé à une vérification des changements, en millisecondes.\n\nAu-delà, l'analyse s'arrête et **échoue ouvert** : le résultat est annoncé « non vérifié », jamais « aucun problème », et aucun push n'est bloqué."
+        },
+        "wazuhSecurity.project.secretDetection": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Recherche les secrets écrits en dur pendant la découverte du projet (clés d’API, jetons, clés privées, identifiants de base de données).\n\n**Entièrement locale** : la détection tourne sur cette machine et n’envoie au backend qu’une preuve *expurgée* — `sk-proj-********`, jamais la valeur. Les fichiers déjà classés sensibles (`.env`, `.pem`, `id_rsa`…) ne sont pas lus : ils sont signalés par leur chemin depuis la phase 1."
+        },
+        "wazuhSecurity.project.apiSecurity": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Analyse les API exposees par le projet : routes declarees, methodes HTTP, authentification, CORS, transport, surfaces de diagnostic et identifiants ecrits en dur.\n\n**Entierement locale** : la detection tourne sur cette machine et n'envoie au backend qu'un constat — chemin, ligne, regle et extrait de **declaration** expurge. Jamais le contenu du fichier, jamais le corps d'un gestionnaire de route.\n\nL'analyse est **statique** : elle ne voit que ce qui est ecrit litteralement. Une route montee dynamiquement, ou un framework non pris en charge, ne figure pas dans le decompte — ce qui est annonce plutot que devine."
+        },
+        "wazuhSecurity.project.dependencyAnalysis": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Inventorie les dépendances déclarées dans les manifestes et les fichiers de verrouillage (npm, PyPI, Maven, Composer, Go, RubyGems, Cargo).\n\n**Aucune installation, aucune exécution** : seuls des fichiers texte sont lus. Lancer un gestionnaire de paquets pour résoudre l’arbre reviendrait à exécuter du code venu du dépôt analysé."
+        },
+        "wazuhSecurity.project.vulnerabilityCheck": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Compare les dépendances inventoriées à une base publique de vulnérabilités (OSV), **via le backend**. L’extension n’appelle aucun service externe elle-même.\n\nCe qui sort de la machine : un nom de paquet, son écosystème et sa version — ce qu’un registre public connaît déjà. Rien d’autre : ni chemin, ni identifiant de projet, ni contenu.\n\nDésactivé, les dépendances restent inventoriées et le contexte affiche « vérification désactivée » — jamais « aucune vulnérabilité »."
+        },
+        "wazuhSecurity.ai.assistant": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Assistant IA de sécurité : explique un signalement existant, résume les signalements du projet et répond aux questions dans un chat.\n\n**L'IA explique, elle ne décide pas.** Les signalements, leur gravité et leur statut viennent des moteurs de détection déterministes ; l'assistant n'en crée, n'en supprime et n'en modifie aucun. Tout texte produit est marqué « Généré par IA ».\n\nCe qui part vers le **backend** (jamais directement vers un fournisseur d'IA) : l'identifiant du signalement, ou votre question **expurgée**. Le backend réexpurge avant d'envoyer au modèle un contexte réduit : preuve masquée, chemin relatif, métadonnées du projet. Jamais le contenu d'un fichier, jamais une clé ni un mot de passe.\n\nDésactivé, ou sans clé API côté backend, l'analyse de sécurité fonctionne à l'identique.\n\n**Remédiation assistée** : « Suggest Fix with AI » propose une modification bornée au signalement, montrée dans un diff. Rien n'est écrit sans votre confirmation ; après application, les moteurs de détection réanalysent le fichier et disent si le problème a disparu. Les fichiers `.env`, clés privées, certificats et fichiers d'identifiants ne sont jamais modifiés."
+        },
+        "wazuhSecurity.ci.policy": {
+          "type": "string",
+          "enum": [
+            "off",
+            "warn",
+            "block"
+          ],
+          "default": "warn",
+          "enumDescriptions": [
+            "Aucun contrôle : les conditions sont mesurées mais rien n’est signalé.",
+            "Signale les conditions sans jamais bloquer.",
+            "Bloque sur les conditions bloquantes (CRITICAL, HIGH, secrets, dépendances vulnérables par défaut)."
+          ],
+          "markdownDescription": "Politique CI/CD affichée dans la section **Posture de sécurité** de la vue Project.\n\nLe même contrôle déterministe tourne hors de VS Code : `node dist/ci-check.js --policy warn`. Aucun score, aucune IA : les conditions sont des faits établis par les moteurs de détection. Une valeur inconnue retombe sur `warn`, jamais sur `block`."
+        }
+      }
+    },
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "wazuhSecurity.applyFix",
+          "when": "false"
+        },
+        {
+          "command": "wazuhSecurity.dismissFinding",
+          "when": "false"
+        },
+        {
+          "command": "wazuhSecurity.showFindingDetail",
+          "when": "false"
+        },
+        {
+          "command": "wazuhSecurity.openFinding",
+          "when": "false"
+        },
+        {
+          "command": "wazuhSecurity.analyzeWithAi",
+          "when": "wazuhSecurity.aiEnabled"
+        },
+        {
+          "command": "wazuhSecurity.securityChat",
+          "when": "wazuhSecurity.securityChatEnabled"
+        },
+        {
+          "command": "wazuhSecurity.summarizeWithAi",
+          "when": "wazuhSecurity.securityAiEnabled"
+        },
+        {
+          "command": "wazuhSecurity.suggestFixWithAi",
+          "when": "false"
+        },
+        {
+          "command": "wazuhSecurity.applyAiFix",
+          "when": "false"
+        },
+        {
+          "command": "wazuhSecurity.cancelAiFix",
+          "when": "false"
+        },
+        {
+          "command": "wazuhSecurity.showAiFixDiff",
+          "when": "false"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "wazuhSecurity.refreshProject",
+          "when": "view == wazuhSecurity.project",
+          "group": "navigation@1"
+        },
+        {
+          "command": "wazuhSecurity.scanProjectSecurity",
+          "when": "view == wazuhSecurity.project",
+          "group": "navigation@2"
+        },
+        {
+          "command": "wazuhSecurity.scanCurrentFile",
+          "when": "view == wazuhSecurity.findings",
+          "group": "navigation@1"
+        },
+        {
+          "command": "wazuhSecurity.scanWorkspace",
+          "when": "view == wazuhSecurity.findings",
+          "group": "navigation@2"
+        },
+        {
+          "command": "wazuhSecurity.refreshFindings",
+          "when": "view == wazuhSecurity.findings",
+          "group": "navigation@3"
+        },
+        {
+          "command": "wazuhSecurity.clearFindings",
+          "when": "view == wazuhSecurity.findings",
+          "group": "navigation@4"
+        },
+        {
+          "command": "wazuhSecurity.scanCurrentFile",
+          "when": "view == wazuhSecurity.riskOverview",
+          "group": "navigation@1"
+        },
+        {
+          "command": "wazuhSecurity.clearFindings",
+          "when": "view == wazuhSecurity.riskOverview",
+          "group": "navigation@2"
+        },
+        {
+          "command": "wazuhSecurity.scanGitChanges",
+          "when": "view == wazuhSecurity.project",
+          "group": "navigation@3"
+        },
+        {
+          "command": "wazuhSecurity.summarizeWithAi",
+          "when": "view == wazuhSecurity.findings && wazuhSecurity.securityAiEnabled",
+          "group": "navigation@5"
+        },
+        {
+          "command": "wazuhSecurity.securityChat",
+          "when": "view == wazuhSecurity.findings && wazuhSecurity.securityChatEnabled",
+          "group": "navigation@6"
+        },
+        {
+          "command": "wazuhSecurity.securityChat",
+          "when": "view == wazuhSecurity.project && wazuhSecurity.securityChatEnabled",
+          "group": "navigation@4"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "wazuhSecurity.openFinding",
+          "when": "view == wazuhSecurity.findings && viewItem =~ /^wazuhSecurity\\.finding/",
+          "group": "inline@1"
+        },
+        {
+          "command": "wazuhSecurity.analyzeWithAi",
+          "when": "view == wazuhSecurity.findings && viewItem =~ /^wazuhSecurity\\.finding/ && wazuhSecurity.aiEnabled",
+          "group": "inline@2"
+        },
+        {
+          "command": "wazuhSecurity.openFinding",
+          "when": "view == wazuhSecurity.findings && viewItem =~ /^wazuhSecurity\\.finding/",
+          "group": "1_view@1"
+        },
+        {
+          "command": "wazuhSecurity.applyFix",
+          "when": "view == wazuhSecurity.findings && viewItem == wazuhSecurity.finding.fixable",
+          "group": "1_view@2"
+        },
+        {
+          "command": "wazuhSecurity.dismissFinding",
+          "when": "view == wazuhSecurity.findings && viewItem =~ /^wazuhSecurity\\.finding/",
+          "group": "1_view@3"
+        },
+        {
+          "command": "wazuhSecurity.analyzeWithAi",
+          "when": "view == wazuhSecurity.findings && viewItem =~ /^wazuhSecurity\\.finding/ && wazuhSecurity.aiEnabled",
+          "group": "1_view@4"
+        },
+        {
+          "command": "wazuhSecurity.suggestFixWithAi",
+          "when": "view == wazuhSecurity.findings && viewItem =~ /^wazuhSecurity\\.finding/ && wazuhSecurity.securityFixEnabled",
+          "group": "1_view@5"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "compile": "node esbuild.mjs",
+    "ci-check": "node dist/ci-check.js",
+    "watch": "node esbuild.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "build": "npm run typecheck && npm run compile -- --production",
+    "vscode:prepublish": "npm run build",
+    "test": "node esbuild.mjs --tests && node --test out-test/analysis.test.cjs out-test/backendClient.test.cjs out-test/findingsStore.test.cjs out-test/fixGuard.test.cjs out-test/notificationLedger.test.cjs out-test/streamClient.test.cjs out-test/detailHtml.test.cjs out-test/presentation.test.cjs out-test/backendUrl.test.cjs out-test/agentToken.test.cjs out-test/projectIdentity.test.cjs out-test/projectDiscovery.test.cjs out-test/projectContext.test.cjs out-test/apiContract.test.cjs out-test/secretScanner.test.cjs out-test/dependencyInventory.test.cjs out-test/securityFindings.test.cjs out-test/monitorClassification.test.cjs out-test/scanQueue.test.cjs out-test/monitoring.test.cjs out-test/gitDiff.test.cjs out-test/gitSecurity.test.cjs out-test/apiSecurity.test.cjs out-test/securityAi.test.cjs out-test/aiRemediation.test.cjs out-test/posture.test.cjs"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/vscode": "^1.85.0",
+    "esbuild": "^0.21.5",
+    "typescript": "^5.4.5"
+  },
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "L'agent lit le code du workspace pour l'analyser et envoie son contenu au backend configure. Dans un workspace non fiable, l'adresse du backend definie par le workspace est ignoree : un depot clone ne peut donc pas rediriger le code vers un serveur tiers.",
+      "restrictedConfigurations": [
+        "wazuhSecurity.backendUrl",
+        "wazuhSecurity.allowRemoteBackend"
+      ]
+    },
+    "virtualWorkspaces": {
+      "supported": false,
+      "description": "L'analyse lit les fichiers du disque : un systeme de fichiers virtuel n'est pas pris en charge."
+    }
+  }
+}

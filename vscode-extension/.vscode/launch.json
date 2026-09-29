@@ -1,0 +1,22 @@
+{
+  // Lancement de l'extension dans un Extension Development Host.
+  //
+  // Ouvrir le dossier `vscode-extension/` comme espace de travail, puis F5 :
+  // `${workspaceFolder}` doit désigner la racine de l'extension, celle qui
+  // contient package.json.
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run Wazuh Security Extension",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}"
+      ],
+      "outFiles": [
+        "${workspaceFolder}/dist/**/*.js"
+      ],
+      "preLaunchTask": "npm: build"
+    }
+  ]
+}

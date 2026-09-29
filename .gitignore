@@ -1,0 +1,117 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Node
+node_modules/
+npm-debug.log*
+coverage/
+.nyc_output/
+
+# Artefacts de build de l'extension.
+#
+# dist/ n'est PAS versionne : `main` pointe sur dist/extension.js, mais ce
+# fichier est regenere par `npm run compile` (F5, via la tache de
+# launch.json) et par `vscode:prepublish` (`npm run build`) lors du
+# packaging. dist/ci-check.js se reconstruit de la meme facon.
+vscode-extension/dist/
+vscode-extension/out/
+vscode-extension/out-test/
+vscode-extension/.vscode-test/
+*.vsix
+
+# Secrets
+#
+# ATTENTION : .gitignore ne protege que ce qui n'est PAS DEJA suivi. Un
+# fichier ajoute a l'index avant l'ajout d'une regle y reste. Verifiez avec
+#   git ls-files | grep -Ei "\.env|\.pem|\.key"
+# avant le premier commit. Si un secret a deja ete commite, le retirer de
+# l'index ne suffit pas : il faut le revoquer chez le fournisseur.
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+
+# Cles privees et certificats, ou qu'ils se trouvent. Ces motifs valent
+# pour tout le depot : une cle privee n'a aucune raison d'y figurer, meme
+# dans un dossier de test ou de fixtures.
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.ppk
+id_rsa
+id_dsa
+id_ecdsa
+id_ed25519
+*.asc
+
+# Fichiers d'identifiants
+.npmrc
+.pypirc
+.netrc
+.htpasswd
+credentials
+credentials.*
+secrets.*
+!secrets.example.*
+# Module source du moteur de secrets, pas un fichier d'identifiants : sans
+# cette exception, `secrets.*` l'exclurait et le backend clone ne
+# demarrerait pas (importe par app/security/routes.py, posture.py...).
+!backend/app/security/secrets.py
+
+# Jeton d'authentification local de l'agent.
+#
+# Son emplacement par defaut est ~/.wazuh-security/agent-token, donc hors
+# du depot. Ce motif couvre le cas ou AGENT_TOKEN_PATH aurait ete pointe
+# dans le projet — ce qu'il ne faut pas faire, mais qui ne doit surtout pas
+# aboutir a un commit.
+agent-token
+*.agent-token
+
+# Bases SQLite, ou qu'elles se trouvent : backend/data/alerts.db peut
+# contenir des alertes reelles, et une base de test locale n'a rien a
+# faire dans le depot. backend/data/.gitkeep reste versionne.
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Journaux, fichiers temporaires, artefacts de validation locaux
+*.log
+logs/
+*.tmp
+*.temp
+*.bak
+*.orig
+*.swp
+*~
+tmp/
+temp/
+scratchpad/
+
+# IDE / OS
+# vscode-extension/.vscode/launch.json et tasks.json restent versionnes :
+# ils portent la configuration F5 documentee dans le README.
+**/.vscode/*
+!**/.vscode/launch.json
+!**/.vscode/tasks.json
+!**/.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+Desktop.ini
+ehthumbs.db

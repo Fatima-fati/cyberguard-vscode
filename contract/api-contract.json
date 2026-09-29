@@ -1,0 +1,1305 @@
+{
+  "$comment": [
+    "Contrat unique entre le backend FastAPI et l'extension VS Code.",
+    "",
+    "Le risque qu'il ferme : backendClient.ts (interfaces TypeScript) et",
+    "app/code/schemas.py + app/project/schemas.py (modeles Pydantic)",
+    "decrivent le MEME contrat en deux endroits, sans lien mecanique. Une",
+    "divergence ne se manifeste qu'a l'execution, chez l'utilisateur, sous",
+    "la forme d'un champ vide ou d'un affichage de travers.",
+    "",
+    "Ce fichier est la troisieme copie — et la seule qui fasse autorite.",
+    "Deux tests le lisent :",
+    "",
+    "  backend/tests/test_api_contract.py     compare au schema OpenAPI",
+    "  vscode-extension/test/apiContract.test.ts  compare aux types TS",
+    "",
+    "Une divergence d'un cote OU de l'autre fait echouer un build. Modifier",
+    "un contrat demande donc de modifier ce fichier, ce qui rend le",
+    "changement visible en revue plutot que silencieux.",
+    "",
+    "`required` liste les champs dont les deux cotes dependent. Un champ",
+    "present dans le code mais absent d'ici est tolere (le backend peut",
+    "renvoyer plus que ce que l'extension lit) ; l'inverse est une erreur.",
+    "",
+    "`forbidden` liste les champs qui ne doivent JAMAIS apparaitre. Ce ne",
+    "sont pas des oublis : ce sont des interdits de securite, verifies a",
+    "chaque build.",
+    "",
+    "Phase 2 : detection de secrets, inventaire de dependances, analyse de",
+    "vulnerabilites. Ces trois capacites sont INDEPENDANTES de Wazuh : aucune",
+    "route de ce contrat n'appelle le Manager, l'Indexer ou l'API Wazuh, et",
+    "toutes repondent a l'identique avec Wazuh arrete.",
+    "",
+    "Phase 6 : assistant IA de securite. Il EXPLIQUE des findings deja",
+    "produits par les moteurs deterministes ; il n'en cree, n'en supprime et",
+    "n'en requalifie aucun. Deux interdits nouveaux sont verifies a chaque",
+    "build :",
+    "",
+    "  * aucun modele de sortie IA ne porte `severity`, `risk_score` ni",
+    "    `status` — le modele n'a structurellement pas de champ ou ecrire",
+    "    une decision ;",
+    "  * toute reponse IA porte `ai_generated` et `disclaimer` — une",
+    "    explication non marquee serait prise pour un constat verifie.",
+    "",
+    "L'assistant est OPTIONNEL : sans OPENAI_API_KEY, ses routes repondent",
+    "503 avec une raison, et aucune autre route de ce contrat ne change de",
+    "comportement.",
+    "",
+    "Phase 7 : remediation assistee. Le backend PROPOSE une modification",
+    "bornee d'un fichier ; il n'ecrit ni le fichier ni le finding. La",
+    "requete porte un EXTRAIT borne et expurge (`excerpt_lines`), objet meme",
+    "de la route et jamais persiste. La reponse ne porte ni gravite ni",
+    "statut : c'est la nouvelle analyse deterministe, apres application",
+    "confirmee par l'utilisateur, qui dit si le probleme a disparu.",
+    "",
+    "Phase 8 : posture de securite et controle CI/CD. Lectures seules des",
+    "findings et du contexte existants : aucun score, aucune IA, aucun",
+    "Wazuh. Un domaine jamais analyse porte `findings: null`, jamais 0."
+  ],
+  "version": "1.4.0",
+  "endpoints": {
+    "GET /api/code/health": {
+      "purpose": "Diagnostic. Seule route publique.",
+      "authenticated": false,
+      "response": {
+        "model": "CodeHealth",
+        "required": [
+          "status",
+          "analysis_enabled",
+          "ai_enabled",
+          "rules_version",
+          "rules_count",
+          "api_version",
+          "max_content_bytes",
+          "database",
+          "auth_required",
+          "project_context_enabled",
+          "project_security_enabled"
+        ]
+      }
+    },
+    "POST /api/code/scan": {
+      "purpose": "Analyse un document.",
+      "authenticated": true,
+      "request": {
+        "model": "CodeScanRequest",
+        "required": [
+          "file_path",
+          "language",
+          "content",
+          "content_hash",
+          "workspace",
+          "project_uid",
+          "ai_enrichment"
+        ]
+      },
+      "response": {
+        "model": "CodeScanResult",
+        "required": [
+          "scan_uid",
+          "file_path",
+          "language",
+          "content_hash",
+          "line_count",
+          "rules_version",
+          "analysis_status",
+          "analysis_error",
+          "findings",
+          "findings_count",
+          "counts",
+          "cached",
+          "ai_enrichment_requested",
+          "ai_enrichment_applied"
+        ]
+      }
+    },
+    "POST /api/project/discover": {
+      "purpose": "Enregistre un projet, retourne son identifiant stable.",
+      "authenticated": true,
+      "request": {
+        "model": "ProjectDiscoverRequest",
+        "required": [
+          "root_hash",
+          "project_name",
+          "discovery_version"
+        ],
+        "forbidden": [
+          "workspace_path",
+          "root_path",
+          "absolute_path"
+        ]
+      },
+      "response": {
+        "model": "ProjectRegistration",
+        "required": [
+          "project_uid",
+          "project_name",
+          "root_hash",
+          "status",
+          "known",
+          "last_discovery"
+        ]
+      }
+    },
+    "POST /api/project/{project_uid}/index": {
+      "purpose": "Soumet l'index du projet, recoit le contexte recalcule.",
+      "authenticated": true,
+      "request": {
+        "model": "ProjectIndexRequest",
+        "required": [
+          "files",
+          "manifests",
+          "git",
+          "discovered_count",
+          "truncated",
+          "warnings",
+          "discovery_version"
+        ]
+      },
+      "response": {
+        "model": "ProjectSecurityContext"
+      }
+    },
+    "GET /api/project/{project_uid}/context": {
+      "purpose": "Relit le contexte enregistre.",
+      "authenticated": true,
+      "response": {
+        "model": "ProjectSecurityContext"
+      }
+    },
+    "GET /api/security/health": {
+      "purpose": "Capacites du moteur de securite projet.",
+      "authenticated": true,
+      "response": {
+        "model": "SecurityEngineHealth",
+        "required": [
+          "status",
+          "secret_detection_enabled",
+          "dependency_inventory_enabled",
+          "vulnerability_check_enabled",
+          "vulnerability_provider",
+          "supported_ecosystems",
+          "requires_wazuh"
+        ]
+      }
+    },
+    "POST /api/project/{project_uid}/secrets": {
+      "purpose": "Enregistre un balayage de secrets realise sur le poste.",
+      "authenticated": true,
+      "request": {
+        "model": "SecretScanSubmission",
+        "required": [
+          "findings",
+          "scanned_files",
+          "skipped_files",
+          "engine",
+          "engine_version",
+          "truncated",
+          "warnings"
+        ]
+      },
+      "response": {
+        "model": "SecretScanResult",
+        "required": [
+          "project_uid",
+          "findings",
+          "statistics",
+          "warnings"
+        ]
+      }
+    },
+    "POST /api/project/{project_uid}/api-security": {
+      "purpose": "Enregistre une analyse de securite d'API realisee sur le poste.",
+      "authenticated": true,
+      "request": {
+        "model": "ApiScanSubmission",
+        "required": [
+          "findings",
+          "scanned_files",
+          "endpoints_detected",
+          "engine",
+          "engine_version",
+          "truncated",
+          "warnings"
+        ]
+      },
+      "response": {
+        "model": "ApiScanResult",
+        "required": [
+          "project_uid",
+          "findings",
+          "statistics",
+          "warnings"
+        ]
+      }
+    },
+    "POST /api/project/{project_uid}/dependencies": {
+      "purpose": "Enregistre l'inventaire des dependances et, si possible, le verifie.",
+      "authenticated": true,
+      "request": {
+        "model": "DependencyInventorySubmission",
+        "required": [
+          "dependencies",
+          "manifests_read",
+          "truncated",
+          "warnings",
+          "inventory_version",
+          "check_vulnerabilities"
+        ]
+      },
+      "response": {
+        "model": "DependencyScanResult",
+        "required": [
+          "project_uid",
+          "findings",
+          "dependency_statistics",
+          "vulnerability_statistics",
+          "ecosystems",
+          "warnings"
+        ]
+      }
+    },
+    "GET /api/project/{project_uid}/findings": {
+      "purpose": "Findings de securite d'un projet, toutes familles confondues.",
+      "authenticated": true,
+      "response": {
+        "model": "SecurityFinding"
+      }
+    },
+    "GET /api/security/ai/health": {
+      "purpose": "Etat de l'assistant IA de securite. Consultee avant d'afficher un bouton IA : proposer une action qui repondra 503 coute plus cher que de ne rien proposer.",
+      "authenticated": true,
+      "response": {
+        "model": "SecurityAiHealth",
+        "required": [
+          "status",
+          "available",
+          "chat_available",
+          "provider_configured",
+          "assistant_enabled",
+          "chat_enabled",
+          "model",
+          "reason",
+          "disclaimer",
+          "max_context_findings",
+          "modifies_findings",
+          "modifies_severity",
+          "requires_wazuh",
+          "fix_available"
+        ]
+      }
+    },
+    "POST /api/project/{project_uid}/findings/{finding_id}/ai-analysis": {
+      "purpose": "Fait expliquer un finding EXISTANT. N'ecrit jamais dans security_findings et ne change aucune gravite.",
+      "authenticated": true,
+      "response": {
+        "model": "SecurityFindingAiAnalysis",
+        "required": [
+          "finding_id",
+          "project_uid",
+          "ai_generated",
+          "disclaimer",
+          "model",
+          "analyzed_at",
+          "cached",
+          "category",
+          "deterministic_severity",
+          "deterministic_confidence",
+          "deterministic_title",
+          "detection_engine",
+          "explanation",
+          "why_it_matters",
+          "project_impact",
+          "evidence_interpretation",
+          "recommendation",
+          "remediation_steps",
+          "secure_example",
+          "related_concepts",
+          "developer_summary",
+          "insufficient_context",
+          "missing_information",
+          "confidence",
+          "project_context_available",
+          "related_findings_considered"
+        ],
+        "forbidden": [
+          "severity",
+          "risk_score",
+          "status",
+          "evidence"
+        ]
+      }
+    },
+    "POST /api/project/{project_uid}/ai/summary": {
+      "purpose": "Resume plusieurs findings d'un projet et en donne les relations. Annonce toujours sa couverture.",
+      "authenticated": true,
+      "request": {
+        "model": "SecurityAiSummaryRequest",
+        "required": [
+          "finding_ids"
+        ]
+      },
+      "response": {
+        "model": "SecurityFindingsAiSummary",
+        "required": [
+          "project_uid",
+          "ai_generated",
+          "disclaimer",
+          "model",
+          "analyzed_at",
+          "summary",
+          "themes",
+          "relationships",
+          "priority_order",
+          "insufficient_context",
+          "missing_information",
+          "findings_considered",
+          "findings_available",
+          "truncated",
+          "severity_counts",
+          "project_context_available"
+        ],
+        "forbidden": [
+          "severity",
+          "risk_score",
+          "status"
+        ]
+      }
+    },
+    "POST /api/project/{project_uid}/ai/chat": {
+      "purpose": "Repond a une question sur la securite du projet ouvert, depuis son contexte et ses findings. La question renvoyee est la version EXPURGEE, celle qui est reellement partie.",
+      "authenticated": true,
+      "request": {
+        "model": "SecurityChatRequest",
+        "required": [
+          "question",
+          "history"
+        ],
+        "forbidden": [
+          "content",
+          "file_content",
+          "workspace",
+          "api_key",
+          "token"
+        ]
+      },
+      "response": {
+        "model": "SecurityChatResponse",
+        "required": [
+          "project_uid",
+          "ai_generated",
+          "disclaimer",
+          "model",
+          "answered_at",
+          "question",
+          "answer",
+          "insufficient_context",
+          "missing_information",
+          "related_concepts",
+          "findings_considered",
+          "findings_available",
+          "truncated",
+          "project_context_available",
+          "history_turns_used"
+        ],
+        "forbidden": [
+          "severity",
+          "risk_score",
+          "status"
+        ]
+      }
+    },
+    "POST /api/project/{project_uid}/findings/{finding_id}/ai-fix": {
+      "purpose": "Propose un correctif borne pour un finding EXISTANT. N'ecrit aucun fichier et aucun finding ; `available: false` dit pourquoi aucun correctif automatique n'est sur.",
+      "authenticated": true,
+      "request": {
+        "model": "SecurityFixRequest",
+        "required": [
+          "file_path",
+          "content_hash",
+          "language",
+          "target_line",
+          "excerpt_start_line",
+          "excerpt_lines"
+        ],
+        "forbidden": [
+          "content",
+          "file_content",
+          "api_key",
+          "token",
+          "workspace"
+        ]
+      },
+      "response": {
+        "model": "SecurityFixProposal",
+        "required": [
+          "finding_id",
+          "project_uid",
+          "kind",
+          "ai_generated",
+          "disclaimer",
+          "model",
+          "generated_at",
+          "category",
+          "deterministic_severity",
+          "deterministic_title",
+          "available",
+          "refusal",
+          "file",
+          "base_content_hash",
+          "start_line",
+          "end_line",
+          "replacement_lines",
+          "explanation",
+          "reason",
+          "warnings",
+          "manual_steps"
+        ],
+        "forbidden": [
+          "severity",
+          "risk_score",
+          "status",
+          "fixed",
+          "command",
+          "sql"
+        ]
+      }
+    },
+    "GET /api/project/{project_uid}/posture": {
+      "purpose": "Posture de securite explicable par domaine. Aucun score ; « jamais analyse » (findings: null) distinct de « aucun finding ».",
+      "authenticated": true,
+      "response": {
+        "model": "SecurityPosture",
+        "required": [
+          "project_uid",
+          "project_name",
+          "generated_at",
+          "analysis",
+          "findings",
+          "areas",
+          "coverage",
+          "history",
+          "ai_generated",
+          "requires_ai",
+          "requires_wazuh"
+        ],
+        "forbidden": [
+          "score",
+          "security_score",
+          "grade",
+          "rating",
+          "risk_score",
+          "evidence",
+          "root_hash",
+          "workspace_path",
+          "secret",
+          "token",
+          "password"
+        ]
+      }
+    },
+    "POST /api/project/{project_uid}/ci-check": {
+      "purpose": "Controle CI/CD deterministe. Politique off / warn / block (warn par defaut) ; un blocage porte toujours ses raisons. Sans IA ni Wazuh.",
+      "authenticated": true,
+      "request": {
+        "model": "CiPolicyRequest",
+        "required": [
+          "mode",
+          "fail_on",
+          "warn_on"
+        ]
+      },
+      "response": {
+        "model": "CiCheckResult",
+        "required": [
+          "schema_version",
+          "project",
+          "generated_at",
+          "policy",
+          "status",
+          "exit_decision",
+          "exit_code",
+          "analysis",
+          "counts",
+          "counts_by_area",
+          "conditions",
+          "reasons",
+          "incomplete_areas",
+          "unsupported_languages",
+          "vulnerability_provider_status",
+          "vulnerability_check_conclusive",
+          "blocking_findings",
+          "requires_ai",
+          "requires_wazuh"
+        ],
+        "forbidden": [
+          "score",
+          "security_score",
+          "grade",
+          "rating",
+          "risk_score",
+          "evidence",
+          "root_hash",
+          "workspace_path",
+          "secret",
+          "token",
+          "password"
+        ]
+      }
+    }
+  },
+  "models": {
+    "IndexedFile": {
+      "purpose": "Une entree de l'index : metadonnee seulement.",
+      "required": [
+        "path",
+        "content_hash",
+        "size",
+        "mtime"
+      ],
+      "forbidden": [
+        "content",
+        "text",
+        "body",
+        "snippet",
+        "excerpt",
+        "lines"
+      ]
+    },
+    "ManifestEvidence": {
+      "purpose": "Preuve extraite d'un manifeste : des noms, jamais des versions.",
+      "required": [
+        "path",
+        "ecosystem",
+        "dependency_names"
+      ],
+      "forbidden": [
+        "content",
+        "versions",
+        "raw",
+        "dependencies"
+      ]
+    },
+    "GitMetadata": {
+      "purpose": "Presence du depot et hote du remote. Rien de plus.",
+      "required": [
+        "detected",
+        "remote_host"
+      ],
+      "forbidden": [
+        "remote_url",
+        "branch",
+        "commit",
+        "author",
+        "email",
+        "history"
+      ]
+    },
+    "ClassifiedFile": {
+      "purpose": "Fichier retenu dans le contexte, avec sa raison.",
+      "required": [
+        "path",
+        "kind",
+        "type",
+        "reason"
+      ],
+      "forbidden": [
+        "content",
+        "snippet",
+        "excerpt",
+        "value",
+        "secret",
+        "entropy"
+      ]
+    },
+    "DetectedLanguage": {
+      "required": [
+        "language",
+        "file_count",
+        "share",
+        "analysis_supported"
+      ]
+    },
+    "DetectedFramework": {
+      "purpose": "Aucun framework sans preuve : evidence et source obligatoires.",
+      "required": [
+        "framework",
+        "evidence",
+        "source",
+        "confidence"
+      ]
+    },
+    "FileStatistics": {
+      "purpose": "truncated est aussi important que les nombres.",
+      "required": [
+        "discovered",
+        "indexed",
+        "source",
+        "manifests",
+        "configuration",
+        "tests",
+        "sensitive",
+        "truncated"
+      ]
+    },
+    "ProjectSecurityContext": {
+      "purpose": "Ce que l'agent sait du projet.",
+      "required": [
+        "project_uid",
+        "project_name",
+        "root_hash",
+        "status",
+        "project_types",
+        "primary_language",
+        "languages",
+        "frameworks",
+        "file_statistics",
+        "manifests",
+        "important_files",
+        "configuration_files",
+        "security_sensitive_files",
+        "git_repository_detected",
+        "git_remote_host",
+        "warnings",
+        "last_discovery",
+        "discovery_version",
+        "secret_statistics",
+        "api_statistics",
+        "dependency_statistics",
+        "dependency_ecosystems",
+        "vulnerability_statistics"
+      ],
+      "forbidden": [
+        "workspace_path",
+        "root_path",
+        "absolute_path",
+        "file_contents",
+        "secrets",
+        "secret_values",
+        "env_values",
+        "git_remote_url",
+        "security_score",
+        "score"
+      ]
+    },
+    "SecurityFinding": {
+      "purpose": "Modele commun a toutes les familles de detection. `evidence` est TOUJOURS expurgee.",
+      "required": [
+        "id",
+        "project_uid",
+        "category",
+        "severity",
+        "confidence",
+        "title",
+        "description",
+        "file",
+        "line_start",
+        "line_end",
+        "evidence",
+        "remediation",
+        "references",
+        "detection_engine",
+        "status",
+        "created_at"
+      ],
+      "forbidden": [
+        "secret",
+        "secret_value",
+        "value",
+        "raw_value",
+        "plaintext",
+        "file_content",
+        "snippet",
+        "password",
+        "token"
+      ]
+    },
+    "SecretFindingSubmission": {
+      "purpose": "Un secret detecte sur le poste, decrit SANS sa valeur.",
+      "required": [
+        "rule_id",
+        "file_path",
+        "line",
+        "column",
+        "secret_type",
+        "severity",
+        "confidence",
+        "evidence_redacted"
+      ],
+      "forbidden": [
+        "secret",
+        "secret_value",
+        "value",
+        "raw",
+        "plaintext",
+        "match",
+        "file_content",
+        "line_content",
+        "absolute_path"
+      ]
+    },
+    "SecretScanSubmission": {
+      "purpose": "Resultat d'un balayage de secrets. Volumes et preuves expurgees seulement.",
+      "required": [
+        "findings",
+        "scanned_files",
+        "skipped_files",
+        "engine",
+        "engine_version",
+        "truncated",
+        "warnings"
+      ],
+      "forbidden": [
+        "files",
+        "file_contents",
+        "workspace_path"
+      ]
+    },
+    "SecretStatistics": {
+      "purpose": "Des nombres, jamais des valeurs.",
+      "required": [
+        "total",
+        "critical",
+        "high",
+        "medium",
+        "low",
+        "files_with_secrets",
+        "scanned_files",
+        "truncated",
+        "last_scan"
+      ],
+      "forbidden": [
+        "secrets",
+        "values",
+        "samples",
+        "paths"
+      ]
+    },
+    "ApiFindingSubmission": {
+      "purpose": "Un probleme d'API constate sur le poste. `evidence` est un extrait de declaration, expurge des deux cotes.",
+      "required": [
+        "rule_id",
+        "file_path",
+        "line",
+        "issue_type",
+        "endpoint",
+        "http_method",
+        "framework",
+        "severity",
+        "confidence",
+        "evidence",
+        "title",
+        "description",
+        "remediation",
+        "references"
+      ],
+      "forbidden": [
+        "content",
+        "source",
+        "body",
+        "handler",
+        "token"
+      ]
+    },
+    "ApiScanSubmission": {
+      "purpose": "Resultat d'une analyse d'API, telle que l'extension l'envoie.",
+      "required": [
+        "findings",
+        "scanned_files",
+        "endpoints_detected",
+        "engine",
+        "engine_version",
+        "truncated",
+        "warnings"
+      ]
+    },
+    "ApiStatistics": {
+      "purpose": "Des nombres, jamais des chemins de route ni des extraits.",
+      "required": [
+        "total",
+        "critical",
+        "high",
+        "medium",
+        "low",
+        "endpoints_detected",
+        "unauthenticated_endpoints",
+        "files_with_findings",
+        "scanned_files",
+        "truncated",
+        "engine",
+        "last_scan"
+      ],
+      "forbidden": [
+        "endpoints",
+        "routes",
+        "paths",
+        "evidence"
+      ]
+    },
+    "DependencyRecord": {
+      "purpose": "Une dependance declaree. `version` vide = non interrogeable, jamais saine.",
+      "required": [
+        "name",
+        "ecosystem",
+        "version",
+        "direct",
+        "manifest",
+        "source"
+      ],
+      "forbidden": [
+        "registry_url",
+        "index_url",
+        "credentials",
+        "token",
+        "auth"
+      ]
+    },
+    "DependencyInventorySubmission": {
+      "purpose": "Inventaire lu dans les manifestes. Aucune installation, aucune execution.",
+      "required": [
+        "dependencies",
+        "manifests_read",
+        "truncated",
+        "warnings",
+        "inventory_version",
+        "check_vulnerabilities"
+      ]
+    },
+    "DependencyStatistics": {
+      "purpose": "`unverified` compte ce que personne n'a pu regarder : jamais additionne aux saines.",
+      "required": [
+        "total",
+        "direct",
+        "transitive",
+        "vulnerable",
+        "unverified",
+        "manifests_read",
+        "truncated",
+        "last_inventory"
+      ]
+    },
+    "EcosystemSummary": {
+      "required": [
+        "ecosystem",
+        "total",
+        "direct",
+        "vulnerable",
+        "verified"
+      ]
+    },
+    "VulnerabilityStatistics": {
+      "purpose": "`provider_status` et `conclusive` distinguent « verifie, rien trouve » de « personne n'a repondu ».",
+      "required": [
+        "total",
+        "critical",
+        "high",
+        "medium",
+        "low",
+        "packages_affected",
+        "packages_checked",
+        "packages_unverified",
+        "provider",
+        "provider_status",
+        "message",
+        "conclusive",
+        "last_check"
+      ]
+    },
+    "SecurityEngineHealth": {
+      "purpose": "Capacites reelles du moteur. `requires_wazuh` est toujours faux.",
+      "required": [
+        "status",
+        "secret_detection_enabled",
+        "dependency_inventory_enabled",
+        "vulnerability_check_enabled",
+        "api_security_enabled",
+        "vulnerability_provider",
+        "supported_ecosystems",
+        "requires_wazuh",
+        "ai_assistant_enabled"
+      ]
+    },
+    "SecurityAiHealth": {
+      "purpose": "Etat de l'assistant IA. `available` est le seul booleen a lire cote client : recomposer la condition ailleurs la ferait diverger. `modifies_findings` et `modifies_severity` sont des faux figes, verifies par un test.",
+      "required": [
+        "status",
+        "available",
+        "chat_available",
+        "provider_configured",
+        "assistant_enabled",
+        "chat_enabled",
+        "model",
+        "reason",
+        "disclaimer",
+        "max_context_findings",
+        "modifies_findings",
+        "modifies_severity",
+        "requires_wazuh",
+        "fix_available"
+      ]
+    },
+    "SecurityFindingAiAnalysis": {
+      "purpose": "Explication IA d'un finding. Les champs `deterministic_*` sont RECOPIES du finding : l'IA ne peut ni les recalculer ni les contredire. `severity` est interdit ici precisement pour qu'aucun chemin de code ne puisse afficher une gravite venue d'un modele.",
+      "required": [
+        "finding_id",
+        "project_uid",
+        "ai_generated",
+        "disclaimer",
+        "model",
+        "analyzed_at",
+        "cached",
+        "category",
+        "deterministic_severity",
+        "deterministic_confidence",
+        "deterministic_title",
+        "detection_engine",
+        "explanation",
+        "why_it_matters",
+        "project_impact",
+        "evidence_interpretation",
+        "recommendation",
+        "remediation_steps",
+        "secure_example",
+        "related_concepts",
+        "developer_summary",
+        "insufficient_context",
+        "missing_information",
+        "confidence",
+        "project_context_available",
+        "related_findings_considered"
+      ],
+      "forbidden": [
+        "severity",
+        "risk_score",
+        "status",
+        "evidence"
+      ]
+    },
+    "SecurityFindingsAiSummary": {
+      "purpose": "Resume IA de plusieurs findings. Porte sa couverture : un resume de 25 findings sur 300 doit se lire comme tel.",
+      "required": [
+        "project_uid",
+        "ai_generated",
+        "disclaimer",
+        "model",
+        "analyzed_at",
+        "summary",
+        "themes",
+        "relationships",
+        "priority_order",
+        "insufficient_context",
+        "missing_information",
+        "findings_considered",
+        "findings_available",
+        "truncated",
+        "severity_counts",
+        "project_context_available"
+      ],
+      "forbidden": [
+        "severity",
+        "risk_score",
+        "status"
+      ]
+    },
+    "SecurityChatRequest": {
+      "purpose": "Question posee a l'assistant. Aucun champ ne peut porter le contenu d'un fichier ni une information d'identification.",
+      "required": [
+        "question",
+        "history"
+      ],
+      "forbidden": [
+        "content",
+        "file_content",
+        "workspace",
+        "api_key",
+        "token"
+      ]
+    },
+    "SecurityChatResponse": {
+      "purpose": "Reponse de l'assistant, marquee comme generee par une IA. `question` est la version EXPURGEE : l'utilisateur voit ce qui est parti.",
+      "required": [
+        "project_uid",
+        "ai_generated",
+        "disclaimer",
+        "model",
+        "answered_at",
+        "question",
+        "answer",
+        "insufficient_context",
+        "missing_information",
+        "related_concepts",
+        "findings_considered",
+        "findings_available",
+        "truncated",
+        "project_context_available",
+        "history_turns_used"
+      ],
+      "forbidden": [
+        "severity",
+        "risk_score",
+        "status"
+      ]
+    },
+    "SecurityChatTurn": {
+      "purpose": "Un tour de conversation. Expurge et borne cote serveur.",
+      "required": [
+        "role",
+        "message"
+      ],
+      "forbidden": [
+        "content",
+        "file_content"
+      ]
+    },
+    "SecurityAiSummaryRequest": {
+      "purpose": "Selection de findings a resumer. Liste vide = tous les ouverts.",
+      "required": [
+        "finding_ids"
+      ]
+    },
+    "AiFindingCounts": {
+      "purpose": "Volumes par gravite et par categorie. Des nombres, jamais des chemins ni des preuves.",
+      "required": [
+        "total",
+        "critical",
+        "high",
+        "medium",
+        "low",
+        "by_category"
+      ],
+      "forbidden": [
+        "file",
+        "files",
+        "evidence",
+        "paths"
+      ]
+    },
+    "SecurityFixRequest": {
+      "purpose": "Demande de correctif : un extrait BORNE et EXPURGE autour de la ligne visee, et l'empreinte du fichier entier. Jamais le fichier.",
+      "required": [
+        "file_path",
+        "content_hash",
+        "language",
+        "target_line",
+        "excerpt_start_line",
+        "excerpt_lines"
+      ],
+      "forbidden": [
+        "content",
+        "file_content",
+        "api_key",
+        "token",
+        "workspace"
+      ]
+    },
+    "SecurityFixProposal": {
+      "purpose": "Proposition de correctif, ou refus motive. Gravite recopiee du finding ; ni statut ni gravite produits par l'IA.",
+      "required": [
+        "finding_id",
+        "project_uid",
+        "kind",
+        "ai_generated",
+        "disclaimer",
+        "model",
+        "generated_at",
+        "category",
+        "deterministic_severity",
+        "deterministic_title",
+        "available",
+        "refusal",
+        "file",
+        "base_content_hash",
+        "start_line",
+        "end_line",
+        "replacement_lines",
+        "explanation",
+        "reason",
+        "warnings",
+        "manual_steps"
+      ],
+      "forbidden": [
+        "severity",
+        "risk_score",
+        "status",
+        "fixed",
+        "command",
+        "sql"
+      ]
+    },
+    "SecurityPosture": {
+      "purpose": "Posture explicable. Aucun score, aucune donnee produite par une IA.",
+      "required": [
+        "project_uid",
+        "project_name",
+        "generated_at",
+        "analysis",
+        "findings",
+        "areas",
+        "coverage",
+        "history",
+        "ai_generated",
+        "requires_ai",
+        "requires_wazuh"
+      ],
+      "forbidden": [
+        "score",
+        "security_score",
+        "grade",
+        "rating",
+        "risk_score",
+        "evidence",
+        "root_hash",
+        "workspace_path",
+        "secret",
+        "token",
+        "password"
+      ]
+    },
+    "PostureArea": {
+      "purpose": "Un domaine (secrets, dependencies, code, api, git) : etat, couverture, avertissements.",
+      "required": [
+        "area",
+        "state",
+        "coverage",
+        "findings",
+        "last_scan",
+        "metrics",
+        "warnings"
+      ],
+      "forbidden": [
+        "score",
+        "security_score",
+        "grade",
+        "rating",
+        "risk_score",
+        "evidence",
+        "root_hash",
+        "workspace_path",
+        "secret",
+        "token",
+        "password",
+        "files",
+        "paths"
+      ]
+    },
+    "PostureCoverage": {
+      "purpose": "Jusqu'ou l'analyse est allee. Des nombres et des etats, jamais des chemins.",
+      "required": [
+        "context_available",
+        "files_discovered",
+        "files_indexed",
+        "index_truncated",
+        "sensitive_files",
+        "unsupported_languages",
+        "vulnerability_provider",
+        "vulnerability_provider_status",
+        "vulnerability_check_conclusive",
+        "vulnerability_message",
+        "last_discovery"
+      ],
+      "forbidden": [
+        "score",
+        "security_score",
+        "grade",
+        "rating",
+        "risk_score",
+        "evidence",
+        "root_hash",
+        "workspace_path",
+        "secret",
+        "token",
+        "password"
+      ]
+    },
+    "CiCheckResult": {
+      "purpose": "Resultat machine du controle CI, versionne. Ni preuve, ni secret, ni chemin absolu.",
+      "required": [
+        "schema_version",
+        "project",
+        "generated_at",
+        "policy",
+        "status",
+        "exit_decision",
+        "exit_code",
+        "analysis",
+        "counts",
+        "counts_by_area",
+        "conditions",
+        "reasons",
+        "incomplete_areas",
+        "unsupported_languages",
+        "vulnerability_provider_status",
+        "vulnerability_check_conclusive",
+        "blocking_findings",
+        "requires_ai",
+        "requires_wazuh"
+      ],
+      "forbidden": [
+        "score",
+        "security_score",
+        "grade",
+        "rating",
+        "risk_score",
+        "evidence",
+        "root_hash",
+        "workspace_path",
+        "secret",
+        "token",
+        "password"
+      ]
+    },
+    "CiBlockingFinding": {
+      "purpose": "Finding CRITICAL ou HIGH cite par le rapport CI. Chemin relatif ou null.",
+      "required": [
+        "id",
+        "area",
+        "category",
+        "severity",
+        "title",
+        "file",
+        "line"
+      ],
+      "forbidden": [
+        "evidence",
+        "root_hash",
+        "workspace_path",
+        "secret",
+        "token",
+        "password",
+        "snippet",
+        "content"
+      ]
+    },
+    "CiPolicyRequest": {
+      "purpose": "Politique demandee ; tout champ absent reprend la configuration.",
+      "required": [
+        "mode",
+        "fail_on",
+        "warn_on"
+      ]
+    }
+  },
+  "invariants": [
+    "Aucun modele de projet ne porte de champ de contenu de fichier.",
+    "Aucun modele de projet ne porte le chemin absolu du workspace.",
+    "Aucun modele de projet ne porte l'URL complete d'un remote Git.",
+    "Aucun modele de projet ne porte de score de securite (phase ulterieure).",
+    "GET /api/code/health est la seule route non authentifiee.",
+    "Aucun modele ne porte la valeur d'un secret : seule une preuve expurgee circule.",
+    "Une dependance sans version figee est comptee non verifiee, jamais saine.",
+    "VulnerabilityStatistics porte toujours l'etat du fournisseur : un total nul sans etat concluant ne signifie pas « aucune vulnerabilite ».",
+    "La securite projet (secrets, dependances, vulnerabilites) ne depend d'aucune route Wazuh.",
+    "Aucune reponse de l'assistant IA ne porte de gravite : elle est recopiee du finding deterministe (`deterministic_severity`).",
+    "Toute reponse de l'assistant IA porte `ai_generated` et `disclaimer` : une explication non marquee serait prise pour un constat verifie.",
+    "L'assistant IA est optionnel : sans cle API ses routes repondent 503, et la detection, l'affichage et le tri des findings sont inchanges.",
+    "L'assistant IA n'ecrit jamais dans la table des findings : ses explications vivent dans une table separee.",
+    "La remediation assistee n'ecrit ni fichier ni finding cote backend : elle decrit une modification, que seul l'editeur applique apres confirmation explicite.",
+    "Apres application d'un correctif, c'est une nouvelle analyse deterministe qui dit si le finding existe encore, jamais l'IA.",
+    "Aucun correctif n'est propose pour un fichier protege (.env, cle privee, certificat, identifiants) ni pour un fichier de verrouillage.",
+    "L'identifiant d'un finding est propre a un projet : le meme constat peut exister dans deux projets.",
+    "La posture de securite ne porte aucun score : elle decrit, par domaine, ce qui a ete analyse et ce qui ne l'a pas ete.",
+    "Un domaine jamais analyse porte `findings: null`, jamais 0.",
+    "Le controle CI/CD est deterministe et fonctionne sans IA ni Wazuh ; un blocage porte toujours ses raisons."
+  ]
+}

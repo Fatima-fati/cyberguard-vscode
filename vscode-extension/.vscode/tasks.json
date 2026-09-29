@@ -1,0 +1,20 @@
+{
+  // Déclare explicitement la tâche `npm: build` référencée par
+  // launch.json. VS Code sait détecter seul les scripts npm, mais cette
+  // détection dépend du réglage `npm.autoDetect` : sans cette
+  // déclaration, F5 peut échouer sur « Could not find the task ».
+  //
+  // La tâche se contente d'appeler le script existant du package.json —
+  // aucun comportement de compilation n'est modifié ici.
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "type": "npm",
+      "script": "build",
+      "group": "build",
+      "problemMatcher": "$tsc",
+      "label": "npm: build",
+      "detail": "npm run typecheck && npm run compile -- --production"
+    }
+  ]
+}
